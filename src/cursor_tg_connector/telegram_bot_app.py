@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 
+from telegram import BotCommand
 from telegram.ext import (
     Application,
     ApplicationBuilder,
@@ -16,13 +17,22 @@ from cursor_tg_connector.telegram_bot_callbacks import callback_router
 from cursor_tg_connector.telegram_bot_commands import (
     agents_command,
     cancel_command,
+    help_command,
     new_agent_command,
     start_command,
 )
-from cursor_tg_connector.telegram_bot_common import AppServices
+from cursor_tg_connector.telegram_bot_common import BOT_COMMANDS, AppServices
 from cursor_tg_connector.telegram_bot_messages import text_message_handler
 
 logger = logging.getLogger(__name__)
+
+
+async def register_commands(application: Application) -> None:
+    """Register bot commands with Telegram so the slash menu auto-completes."""
+    await application.bot.set_my_commands(
+        [BotCommand(cmd, desc) for cmd, desc in BOT_COMMANDS]
+    )
+    logger.info("Registered %d bot commands with Telegram", len(BOT_COMMANDS))
 
 
 def build_application(services: AppServices) -> Application:
@@ -30,6 +40,7 @@ def build_application(services: AppServices) -> Application:
     application.bot_data["services"] = services
 
     application.add_handler(CommandHandler("start", start_command))
+    application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("agents", agents_command))
     application.add_handler(CommandHandler("newagent", new_agent_command))
     application.add_handler(CommandHandler("cancel", cancel_command))

@@ -88,3 +88,33 @@ async def test_create_agent_surfaces_cursor_error_message() -> None:
                     base_branch="main",
                     prompt_text="hello",
                 )
+
+
+@pytest.mark.asyncio
+async def test_request_retries_on_server_error_then_succeeds() -> None:
+    async with httpx.AsyncClient(base_url="https://api.cursor.com") as http_client:
+        client = CursorApiClient(
+            api_key="test-key",
+            base_url="https://api.cursor.com",
+            http_client=http_client,
+            max_retries=1,
+            retry_backoff_seconds=0.001,
+        )
+
+        with respx.mock(assert_all_called=True) as router:
+            router.get("https://api.cursor.com/v0/me").mock(
+                side_effect=[
+                    httpx.Response(500, json={"error": {"message": "temporary failure"}}),
+                    httpx.Response(
+                        200,
+                        json={
+                            "apiKeyName": "test-key",
+                            "createdAt": "2024-01-01T00:00:00Z",
+                        },
+                    ),
+                ]
+            )
+
+            api_key_info = await client.validate_api_key()
+
+    assert api_key_info.api_key_name == "test-key"

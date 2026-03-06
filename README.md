@@ -39,12 +39,16 @@ Important settings:
 - `TELEGRAM_BOT_TOKEN`
 - `TELEGRAM_ALLOWED_USER_ID`
 - `CURSOR_API_KEY`
+- `CURSOR_API_MAX_RETRIES`
+- `CURSOR_API_RETRY_BACKOFF_SECONDS`
 - `SQLITE_PATH`
 - `POLL_INTERVAL_SECONDS`
 - `FOLLOWUP_POLL_INTERVAL_SECONDS`
 - `FOLLOWUP_POLL_TIMEOUT_SECONDS`
 
 `TELEGRAM_CHAT_ID` is optional. If omitted, the connector will use the private chat ID discovered from your first authorized interaction with the bot.
+
+The Cursor API client retries transient network failures, HTTP `429`, and HTTP `5xx` responses with exponential backoff.
 
 ## Local development
 

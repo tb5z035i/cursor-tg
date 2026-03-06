@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import signal
 
 from cursor_tg_connector.config import Settings
 from cursor_tg_connector.cursor_api_client import CursorApiClient
@@ -29,6 +30,8 @@ async def run() -> None:
     cursor_client = CursorApiClient(
         api_key=settings.cursor_api_key,
         base_url=settings.cursor_api_base_url,
+        max_retries=settings.cursor_api_max_retries,
+        retry_backoff_seconds=settings.cursor_api_retry_backoff_seconds,
     )
     api_key_info = await cursor_client.validate_api_key()
     logger.info("Validated Cursor API key: %s", api_key_info.api_key_name)
@@ -55,18 +58,49 @@ async def run() -> None:
     )
 
     application = build_application(app_services)
+    loop = asyncio.get_running_loop()
+    stop_event = asyncio.Event()
+    installed_signals = _install_signal_handlers(loop, stop_event)
+    updater_started = False
+    application_started = False
+    application_initialized = False
     try:
         await application.initialize()
+        application_initialized = True
         await application.start()
+        application_started = True
+        if application.updater is None:
+            raise RuntimeError("Telegram updater is not available")
         await application.updater.start_polling()
+        updater_started = True
         logger.info("Telegram polling started")
-        await asyncio.Event().wait()
+        await stop_event.wait()
     finally:
-        await application.updater.stop()
-        await application.stop()
-        await application.shutdown()
+        for sig in installed_signals:
+            loop.remove_signal_handler(sig)
+        if application.updater is not None and updater_started:
+            await application.updater.stop()
+        if application_started:
+            await application.stop()
+        if application_initialized:
+            await application.shutdown()
         await cursor_client.aclose()
 
 
 def main() -> None:
     asyncio.run(run())
+
+
+def _install_signal_handlers(
+    loop: asyncio.AbstractEventLoop,
+    stop_event: asyncio.Event,
+) -> list[signal.Signals]:
+    installed: list[signal.Signals] = []
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        try:
+            loop.add_signal_handler(sig, stop_event.set)
+            installed.append(sig)
+        except NotImplementedError:
+            logger.warning("Signal handlers are not available on this platform")
+            break
+    return installed

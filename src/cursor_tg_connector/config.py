@@ -21,6 +21,11 @@ class Settings(BaseSettings):
         default="https://api.cursor.com",
         alias="CURSOR_API_BASE_URL",
     )
+    cursor_api_max_retries: int = Field(default=3, alias="CURSOR_API_MAX_RETRIES")
+    cursor_api_retry_backoff_seconds: float = Field(
+        default=1.0,
+        alias="CURSOR_API_RETRY_BACKOFF_SECONDS",
+    )
     sqlite_path: Path = Field(default=Path("/data/connector.db"), alias="SQLITE_PATH")
     poll_interval_seconds: float = Field(default=20.0, alias="POLL_INTERVAL_SECONDS")
     followup_poll_interval_seconds: float = Field(
@@ -37,11 +42,19 @@ class Settings(BaseSettings):
         "poll_interval_seconds",
         "followup_poll_interval_seconds",
         "followup_poll_timeout_seconds",
+        "cursor_api_retry_backoff_seconds",
     )
     @classmethod
     def validate_positive_interval(cls, value: float) -> float:
         if value <= 0:
             raise ValueError("intervals must be positive")
+        return value
+
+    @field_validator("cursor_api_max_retries")
+    @classmethod
+    def validate_non_negative_retries(cls, value: int) -> int:
+        if value < 0:
+            raise ValueError("max retries must be zero or greater")
         return value
 
     @field_validator("cursor_api_base_url")

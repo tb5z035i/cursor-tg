@@ -56,7 +56,8 @@ async def test_list_running_agents_includes_unread_counts(state_repo) -> None:
     session = await state_repo.get_session(1234)
     session.active_agent_id = "agent-2"
     await state_repo.upsert_session(session)
-    await state_repo.mark_messages_delivered("agent-1", ["m1"])
+    await state_repo.set_delivery_cursor("agent-1", 1)
+    await state_repo.set_delivery_cursor("agent-2", 0)
 
     items = await service.list_running_agents_with_unread_counts(1234)
 

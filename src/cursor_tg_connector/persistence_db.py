@@ -35,6 +35,14 @@ CREATE TABLE IF NOT EXISTS agent_notice_state (
 )
 """
 
+CREATE_DELIVERY_CURSOR_TABLE = """
+CREATE TABLE IF NOT EXISTS agent_delivery_cursor (
+    agent_id TEXT PRIMARY KEY,
+    delivered_count INTEGER NOT NULL DEFAULT 0,
+    updated_at TEXT NOT NULL
+)
+"""
+
 
 class Database:
     def __init__(self, path: Path) -> None:
@@ -47,6 +55,7 @@ class Database:
             await db.execute(CREATE_SESSION_TABLE)
             await db.execute(CREATE_MESSAGE_DELIVERY_TABLE)
             await db.execute(CREATE_NOTICE_STATE_TABLE)
+            await db.execute(CREATE_DELIVERY_CURSOR_TABLE)
             await db.commit()
 
     async def connect(self) -> aiosqlite.Connection:

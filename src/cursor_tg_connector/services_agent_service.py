@@ -14,6 +14,7 @@ from cursor_tg_connector.utils_formatting import build_active_agent_message, bui
 class AgentConversationSnapshot:
     agent: Agent
     unread_messages: list[ConversationMessage]
+    delivered_count: int = 0
 
 
 class AgentService:
@@ -70,12 +71,14 @@ class AgentService:
     ) -> int:
         snapshot = await self.get_unread_snapshot(agent_id)
         to_send = snapshot.unread_messages[:limit]
+        cursor = snapshot.delivered_count
         for message in to_send:
             await notifier.send_text(
                 chat_id,
                 build_active_agent_message(snapshot.agent, message.text),
             )
-            await self.state_repo.mark_messages_delivered(agent_id, [message.id])
+            cursor += 1
+            await self.state_repo.set_delivery_cursor(agent_id, cursor)
         return len(to_send)
 
     async def get_unread_snapshot(self, agent_id: str) -> AgentConversationSnapshot:
@@ -84,14 +87,20 @@ class AgentService:
         assistant_messages = [
             message for message in conversation.messages if message.type == "assistant_message"
         ]
-        delivered_ids = await self.state_repo.get_delivered_message_ids(
-            agent_id,
-            [message.id for message in assistant_messages],
+        cursor = await self.state_repo.get_delivery_cursor(agent_id)
+        if cursor is None:
+            await self.state_repo.set_delivery_cursor(agent_id, len(assistant_messages))
+            return AgentConversationSnapshot(
+                agent=agent,
+                unread_messages=[],
+                delivered_count=len(assistant_messages),
+            )
+        unread_messages = assistant_messages[cursor:]
+        return AgentConversationSnapshot(
+            agent=agent,
+            unread_messages=unread_messages,
+            delivered_count=cursor,
         )
-        unread_messages = [
-            message for message in assistant_messages if message.id not in delivered_ids
-        ]
-        return AgentConversationSnapshot(agent=agent, unread_messages=unread_messages)
 
     async def list_running_snapshots(self) -> list[AgentConversationSnapshot]:
         running_agents = await self._list_running_agents()

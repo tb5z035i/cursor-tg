@@ -212,6 +212,36 @@ class StateRepository:
         finally:
             await db.close()
 
+    async def get_delivery_cursor(self, agent_id: str) -> int | None:
+        db = await self.database.connect()
+        try:
+            cursor = await db.execute(
+                "SELECT delivered_count FROM agent_delivery_cursor WHERE agent_id = ?",
+                (agent_id,),
+            )
+            row = await cursor.fetchone()
+        finally:
+            await db.close()
+        return row["delivered_count"] if row else None
+
+    async def set_delivery_cursor(self, agent_id: str, count: int) -> None:
+        now = _utcnow()
+        db = await self.database.connect()
+        try:
+            await db.execute(
+                """
+                INSERT INTO agent_delivery_cursor (agent_id, delivered_count, updated_at)
+                VALUES (?, ?, ?)
+                ON CONFLICT(agent_id) DO UPDATE SET
+                    delivered_count = excluded.delivered_count,
+                    updated_at = excluded.updated_at
+                """,
+                (agent_id, count, now),
+            )
+            await db.commit()
+        finally:
+            await db.close()
+
     async def clear_notice_state(self, agent_id: str) -> None:
         db = await self.database.connect()
         try:

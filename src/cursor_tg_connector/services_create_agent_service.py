@@ -183,6 +183,7 @@ class CreateAgentService:
             base_branch=payload["branch"],
             prompt_text=prompt_text,
         )
+        await self.state_repo.set_delivery_cursor(agent.id, 0)
         await self.state_repo.clear_wizard(telegram_user_id)
         await self.state_repo.set_active_agent(telegram_user_id, agent.id)
         return agent

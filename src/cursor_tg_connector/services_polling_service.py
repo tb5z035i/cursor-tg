@@ -63,14 +63,14 @@ class PollingService:
         notifier,
         chat_id: int,
     ) -> None:
+        cursor = snapshot.delivered_count
         for message in snapshot.unread_messages[:10]:
             await notifier.send_text(
                 chat_id,
                 build_active_agent_message(snapshot.agent, message.text),
             )
-            await self.state_repo.mark_messages_delivered(
-                snapshot.agent.id, [message.id]
-            )
+            cursor += 1
+            await self.state_repo.set_delivery_cursor(snapshot.agent.id, cursor)
 
         if not snapshot.unread_messages:
             await self.state_repo.clear_notice_state(snapshot.agent.id)

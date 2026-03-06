@@ -156,11 +156,11 @@ async def test_polling_service_skips_agent_with_active_followup(
 
 
 @pytest.mark.asyncio
-async def test_polling_service_marks_each_message_individually(
+async def test_polling_service_advances_delivery_cursor(
     settings: Settings,
     state_repo: StateRepository,
 ) -> None:
-    """After a successful poll, each delivered message is individually recorded."""
+    """After a successful poll, the delivery cursor advances by the number of sent messages."""
     session = await state_repo.get_session(1234)
     session.telegram_chat_id = 5678
     session.active_agent_id = "agent-active"
@@ -173,6 +173,7 @@ async def test_polling_service_marks_each_message_individually(
             make_message("msg-1", "first"),
             make_message("msg-2", "second"),
         ],
+        delivered_count=3,
     )
     notifier = FakeNotifier()
     service = PollingService(
@@ -183,7 +184,5 @@ async def test_polling_service_marks_each_message_individually(
 
     await service.poll_once(notifier)
 
-    delivered = await state_repo.get_delivered_message_ids(
-        "agent-active", ["msg-1", "msg-2"]
-    )
-    assert delivered == {"msg-1", "msg-2"}
+    cursor = await state_repo.get_delivery_cursor("agent-active")
+    assert cursor == 5

@@ -5,7 +5,7 @@ from collections import deque
 import pytest
 
 from cursor_tg_connector.config import Settings
-from cursor_tg_connector.cursor_api_models import Agent, AgentConversation, ConversationMessage
+from cursor_tg_connector.cursor_api_models import Agent, ConversationMessage
 from cursor_tg_connector.domain_types import WizardStep
 from cursor_tg_connector.services_agent_service import AgentConversationSnapshot
 from cursor_tg_connector.services_followup_service import FollowupService
@@ -22,27 +22,6 @@ class FakeNotifier:
 class FakeCursorClient:
     def __init__(self) -> None:
         self.followups: list[tuple[str, str]] = []
-        self.before_conversation = AgentConversation.model_validate(
-            {
-                "id": "agent-1",
-                "messages": [
-                    {
-                        "id": "old-user",
-                        "type": "user_message",
-                        "text": "Initial request",
-                    },
-                    {
-                        "id": "old-assistant",
-                        "type": "assistant_message",
-                        "text": "Already unread",
-                    },
-                ],
-            }
-        )
-
-    async def get_conversation(self, agent_id: str) -> AgentConversation:
-        assert agent_id == "agent-1"
-        return self.before_conversation
 
     async def add_followup(self, agent_id: str, prompt_text: str) -> str:
         self.followups.append((agent_id, prompt_text))
@@ -56,26 +35,12 @@ class FakeAgentService:
             [
                 AgentConversationSnapshot(
                     agent=self._agent(),
-                    unread_messages=[
-                        ConversationMessage.model_validate(
-                            {
-                                "id": "old-assistant",
-                                "type": "assistant_message",
-                                "text": "Already unread",
-                            }
-                        )
-                    ],
+                    unread_messages=[],
+                    delivered_count=1,
                 ),
                 AgentConversationSnapshot(
                     agent=self._agent(),
                     unread_messages=[
-                        ConversationMessage.model_validate(
-                            {
-                                "id": "old-assistant",
-                                "type": "assistant_message",
-                                "text": "Already unread",
-                            }
-                        ),
                         ConversationMessage.model_validate(
                             {
                                 "id": "new-assistant",
@@ -84,6 +49,7 @@ class FakeAgentService:
                             }
                         ),
                     ],
+                    delivered_count=1,
                 ),
             ]
         )

@@ -56,10 +56,6 @@ class FollowupService:
                 limit=10,
             )
 
-            before = await self.cursor_client.get_conversation(agent_id)
-            before_assistant_count = sum(
-                1 for m in before.messages if m.type == "assistant_message"
-            )
             await self.cursor_client.add_followup(agent_id, text)
 
             timeout = self.settings.followup_poll_timeout_seconds
@@ -67,16 +63,11 @@ class FollowupService:
             while asyncio.get_running_loop().time() < deadline:
                 await asyncio.sleep(self.settings.followup_poll_interval_seconds)
                 snapshot = await self.agent_service.get_unread_snapshot(agent_id)
-                new_messages = snapshot.unread_messages[
-                    max(0, before_assistant_count - snapshot.delivered_count) :
-                ]
-                if not new_messages:
+                if not snapshot.unread_messages:
                     continue
 
-                cursor = snapshot.delivered_count + (
-                    len(snapshot.unread_messages) - len(new_messages)
-                )
-                delivered = new_messages[:10]
+                cursor = snapshot.delivered_count
+                delivered = snapshot.unread_messages[:10]
                 for message in delivered:
                     await notifier.send_text(
                         chat_id,

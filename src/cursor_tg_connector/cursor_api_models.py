@@ -68,3 +68,5 @@ class ErrorBody(BaseModel):
 
 class ErrorEnvelope(BaseModel):
     error: ErrorBody | None = None
+    code: str | None = None
+    message: str | None = None

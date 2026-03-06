@@ -184,10 +184,15 @@ class CursorApiClient:
             payload = ErrorEnvelope.model_validate(response.json())
             if payload.error and payload.error.message:
                 message = payload.error.message
+            elif payload.message:
+                message = payload.message
             else:
                 message = response.text
         except Exception:  # pragma: no cover - defensive fallback
             message = response.text
+
+        if self._is_generic_error_message(message):
+            message = self._default_status_message(response.status_code)
 
         logger.warning(
             "Cursor API error status=%s url=%s message=%s",
@@ -196,3 +201,20 @@ class CursorApiClient:
             message,
         )
         return f"Cursor API request failed ({response.status_code}): {message}"
+
+    def _is_generic_error_message(self, message: str) -> bool:
+        normalized = message.strip().lower()
+        return normalized in {"error", '{"code":"internal","message":"error"}'}
+
+    def _default_status_message(self, status_code: int) -> str:
+        if status_code == 401:
+            return "Unauthorized - invalid or missing Cursor API key"
+        if status_code == 403:
+            return "Forbidden - insufficient permissions or plan limits exceeded"
+        if status_code == 404:
+            return "Resource not found or access denied"
+        if status_code == 429:
+            return "Rate limit exceeded"
+        if status_code >= 500:
+            return "Cursor API internal server error"
+        return "Unexpected Cursor API error"

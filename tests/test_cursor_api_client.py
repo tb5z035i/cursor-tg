@@ -118,3 +118,27 @@ async def test_request_retries_on_server_error_then_succeeds() -> None:
             api_key_info = await client.validate_api_key()
 
     assert api_key_info.api_key_name == "test-key"
+
+
+@pytest.mark.asyncio
+async def test_validate_api_key_maps_generic_401_to_friendly_message() -> None:
+    async with httpx.AsyncClient(base_url="https://api.cursor.com") as http_client:
+        client = CursorApiClient(
+            api_key="test-key",
+            base_url="https://api.cursor.com",
+            http_client=http_client,
+        )
+
+        with respx.mock(assert_all_called=True) as router:
+            router.get("https://api.cursor.com/v0/me").mock(
+                return_value=httpx.Response(
+                    401,
+                    json={"code": "internal", "message": "Error"},
+                )
+            )
+
+            with pytest.raises(
+                CursorApiError,
+                match="Unauthorized - invalid or missing Cursor API key",
+            ):
+                await client.validate_api_key()

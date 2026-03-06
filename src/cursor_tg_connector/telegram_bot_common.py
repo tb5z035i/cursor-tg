@@ -17,6 +17,13 @@ MODEL_PAGE_PREFIX = "wizard:model_page:"
 REPO_SELECT_PREFIX = "wizard:repo:"
 REPO_PAGE_PREFIX = "wizard:repo_page:"
 
+BOT_COMMANDS: list[tuple[str, str]] = [
+    ("agents", "List running agents and switch active agent"),
+    ("newagent", "Create a new Cursor cloud agent"),
+    ("cancel", "Cancel an in-progress create-agent wizard"),
+    ("help", "Show available commands and usage"),
+]
+
 
 @dataclass(slots=True)
 class AppServices:

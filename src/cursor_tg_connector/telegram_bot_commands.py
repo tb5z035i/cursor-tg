@@ -5,28 +5,41 @@ from telegram.ext import ContextTypes
 
 from cursor_tg_connector.services_create_agent_service import CreateAgentError
 from cursor_tg_connector.telegram_bot_common import (
+    BOT_COMMANDS,
     get_services,
     render_agent_keyboard,
     render_model_keyboard,
 )
 from cursor_tg_connector.utils_formatting import format_command_list
 
+_HELP_TEXT = (
+    "Cursor Telegram connector — manage Cursor Cloud agents from Telegram.\n"
+    "\n"
+    "Commands:\n"
+    + "\n".join(f"/{cmd} — {desc}" for cmd, desc in BOT_COMMANDS)
+    + "\n"
+    "\n"
+    "Usage:\n"
+    "• Send /agents to see running agents and switch the active one.\n"
+    "• Send /newagent to create a new agent (model → repo → branch → prompt).\n"
+    "• Send any text message to follow up with the active agent.\n"
+    "• Unread messages from the active agent are delivered automatically.\n"
+    "• Non-active agents show unread counts; use /agents to switch."
+)
+
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not await _authorize_and_record_chat(update, context):
         return
 
-    await update.effective_message.reply_text(
-        "\n".join(
-            [
-                "Cursor Telegram connector is ready.",
-                "Commands:",
-                "/agents - list running agents and switch active agent",
-                "/newagent - create a new Cursor cloud agent",
-                "/cancel - cancel an in-progress create-agent wizard",
-            ]
-        )
-    )
+    await update.effective_message.reply_text(_HELP_TEXT)
+
+
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not await _authorize_and_record_chat(update, context):
+        return
+
+    await update.effective_message.reply_text(_HELP_TEXT)
 
 
 async def agents_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

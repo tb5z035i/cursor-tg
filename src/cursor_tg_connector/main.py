@@ -12,7 +12,7 @@ from cursor_tg_connector.services_agent_service import AgentService
 from cursor_tg_connector.services_create_agent_service import CreateAgentService
 from cursor_tg_connector.services_followup_service import FollowupService
 from cursor_tg_connector.services_polling_service import PollingService
-from cursor_tg_connector.telegram_bot_app import build_application
+from cursor_tg_connector.telegram_bot_app import build_application, register_commands
 from cursor_tg_connector.telegram_bot_common import AppServices
 from cursor_tg_connector.utils_logging import configure_logging
 
@@ -67,6 +67,7 @@ async def run() -> None:
     try:
         await application.initialize()
         application_initialized = True
+        await register_commands(application)
         await application.start()
         application_started = True
         if application.updater is None:

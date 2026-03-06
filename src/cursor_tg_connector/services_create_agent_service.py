@@ -94,7 +94,9 @@ class CreateAgentService:
         items, current_page, total_pages = paginate(repositories, page, per_page)
         return RepositoryPage(repositories=items, page=current_page, total_pages=total_pages)
 
-    async def choose_repository(self, telegram_user_id: int, repository_index: int) -> str:
+    async def choose_repository(
+        self, telegram_user_id: int, repository_index: int
+    ) -> tuple[str, list[str]]:
         session = await self.state_repo.get_session(telegram_user_id)
         repositories = self._wizard_list(session, "repositories")
         if (
@@ -105,12 +107,51 @@ class CreateAgentService:
                 "That repository selection is no longer valid. Run /newagent again."
             )
 
+        repository = repositories[repository_index]
+        branches = await self._fetch_branches_for_repository(repository)
+
         payload = {
             "model": session.wizard_payload["model"],
-            "repository": repositories[repository_index],
+            "repository": repository,
+            "branches": branches,
         }
         await self.state_repo.set_wizard(telegram_user_id, WizardStep.WAITING_BRANCH, payload)
-        return repositories[repository_index]
+        return repository, branches
+
+    async def get_branch_page(
+        self,
+        telegram_user_id: int,
+        page: int,
+        per_page: int = 8,
+    ) -> RepositoryPage:
+        session = await self.state_repo.get_session(telegram_user_id)
+        branches = self._wizard_list(session, "branches")
+        return self.get_branch_page_from_payload(branches, page, per_page)
+
+    def get_branch_page_from_payload(
+        self,
+        branches: list[str],
+        page: int,
+        per_page: int = 8,
+    ) -> RepositoryPage:
+        items, current_page, total_pages = paginate(branches, page, per_page)
+        return RepositoryPage(repositories=items, page=current_page, total_pages=total_pages)
+
+    async def choose_branch(self, telegram_user_id: int, branch_index: int) -> None:
+        session = await self.state_repo.get_session(telegram_user_id)
+        branches = self._wizard_list(session, "branches")
+        if (
+            session.wizard_state != WizardStep.WAITING_BRANCH
+            or branch_index >= len(branches)
+        ):
+            raise CreateAgentError(
+                "That branch selection is no longer valid. Run /newagent again."
+            )
+
+        payload = dict(session.wizard_payload)
+        payload["branch"] = branches[branch_index]
+        del payload["branches"]
+        await self.state_repo.set_wizard(telegram_user_id, WizardStep.WAITING_PROMPT, payload)
 
     async def save_branch(self, telegram_user_id: int, branch_name: str) -> None:
         branch_name = branch_name.strip()
@@ -123,6 +164,7 @@ class CreateAgentService:
 
         payload = dict(session.wizard_payload)
         payload["branch"] = branch_name
+        payload.pop("branches", None)
         await self.state_repo.set_wizard(telegram_user_id, WizardStep.WAITING_PROMPT, payload)
 
     async def finish_prompt(self, telegram_user_id: int, prompt_text: str) -> Agent:
@@ -160,6 +202,25 @@ class CreateAgentService:
             return False
         last_start = datetime.fromisoformat(session.last_create_agent_at)
         return datetime.now(tz=UTC) - last_start < timedelta(minutes=1)
+
+    async def _fetch_branches_for_repository(self, repository_url: str) -> list[str]:
+        try:
+            agents = await self.cursor_client.list_agents()
+        except Exception:
+            agents = []
+
+        seen: set[str] = set()
+        branches: list[str] = []
+        for agent in agents:
+            ref = agent.source.ref
+            if ref and agent.source.repository == repository_url and ref not in seen:
+                seen.add(ref)
+                branches.append(ref)
+
+        if "main" not in seen:
+            branches.insert(0, "main")
+
+        return branches
 
     def _wizard_list(self, session: SessionState, key: str) -> list[str]:
         values = session.wizard_payload.get(key)

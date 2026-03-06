@@ -16,6 +16,8 @@ MODEL_SELECT_PREFIX = "wizard:model:"
 MODEL_PAGE_PREFIX = "wizard:model_page:"
 REPO_SELECT_PREFIX = "wizard:repo:"
 REPO_PAGE_PREFIX = "wizard:repo_page:"
+BRANCH_SELECT_PREFIX = "wizard:branch:"
+BRANCH_PAGE_PREFIX = "wizard:branch_page:"
 
 BOT_COMMANDS: list[tuple[str, str]] = [
     ("agents", "List running agents and switch active agent"),
@@ -74,6 +76,24 @@ def render_repository_keyboard(
         for index, repository in enumerate(page_data.repositories)
     ]
     rows.extend(_pagination_rows(page_data.page, page_data.total_pages, REPO_PAGE_PREFIX))
+    return InlineKeyboardMarkup(rows)
+
+
+def render_branch_keyboard(
+    page_data: RepositoryPage,
+    all_branches: list[str],
+) -> InlineKeyboardMarkup:
+    start_index = page_data.page * 8
+    rows = [
+        [
+            InlineKeyboardButton(
+                branch,
+                callback_data=f"{BRANCH_SELECT_PREFIX}{start_index + index}",
+            )
+        ]
+        for index, branch in enumerate(page_data.repositories)
+    ]
+    rows.extend(_pagination_rows(page_data.page, page_data.total_pages, BRANCH_PAGE_PREFIX))
     return InlineKeyboardMarkup(rows)
 
 

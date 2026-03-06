@@ -5,12 +5,15 @@ from telegram.ext import ContextTypes
 
 from cursor_tg_connector.services_create_agent_service import CreateAgentError
 from cursor_tg_connector.telegram_bot_common import (
+    BRANCH_PAGE_PREFIX,
+    BRANCH_SELECT_PREFIX,
     MODEL_PAGE_PREFIX,
     MODEL_SELECT_PREFIX,
     REPO_PAGE_PREFIX,
     REPO_SELECT_PREFIX,
     SWITCH_AGENT_PREFIX,
     get_services,
+    render_branch_keyboard,
     render_model_keyboard,
     render_repository_keyboard,
 )
@@ -48,6 +51,12 @@ async def callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         return
     if data.startswith(REPO_SELECT_PREFIX):
         await _select_repository(update, context, int(data[len(REPO_SELECT_PREFIX) :]))
+        return
+    if data.startswith(BRANCH_PAGE_PREFIX):
+        await _show_branch_page(update, context, int(data[len(BRANCH_PAGE_PREFIX) :]))
+        return
+    if data.startswith(BRANCH_SELECT_PREFIX):
+        await _select_branch(update, context, int(data[len(BRANCH_SELECT_PREFIX) :]))
         return
 
     await query.answer()
@@ -133,7 +142,7 @@ async def _select_repository(
     query = update.callback_query
     services = get_services(context)
     try:
-        repository = await services.create_agent_service.choose_repository(
+        repository, branches = await services.create_agent_service.choose_repository(
             services.settings.telegram_allowed_user_id,
             repository_index,
         )
@@ -141,7 +150,55 @@ async def _select_repository(
         await query.answer(str(exc), show_alert=True)
         return
 
+    page_data = services.create_agent_service.get_branch_page_from_payload(branches, 0)
     await query.answer("Repository selected")
     await query.edit_message_text(
-        f"Step 3/4: Send the base branch name for {repository}.",
+        f"Step 3/4: Select a base branch for {repository}, or type a branch name.",
+        reply_markup=render_branch_keyboard(page_data, branches),
     )
+
+
+async def _show_branch_page(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    page: int,
+) -> None:
+    query = update.callback_query
+    services = get_services(context)
+    try:
+        page_data = await services.create_agent_service.get_branch_page(
+            services.settings.telegram_allowed_user_id,
+            page,
+        )
+        session = await services.create_agent_service.get_session(
+            services.settings.telegram_allowed_user_id
+        )
+        branches = session.wizard_payload["branches"]
+    except CreateAgentError as exc:
+        await query.answer(str(exc), show_alert=True)
+        return
+
+    await query.answer()
+    await query.edit_message_reply_markup(
+        reply_markup=render_branch_keyboard(page_data, branches)
+    )
+
+
+async def _select_branch(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    branch_index: int,
+) -> None:
+    query = update.callback_query
+    services = get_services(context)
+    try:
+        await services.create_agent_service.choose_branch(
+            services.settings.telegram_allowed_user_id,
+            branch_index,
+        )
+    except CreateAgentError as exc:
+        await query.answer(str(exc), show_alert=True)
+        return
+
+    await query.answer("Branch selected")
+    await query.edit_message_text("Step 4/4: Send the prompt text for the new agent.")

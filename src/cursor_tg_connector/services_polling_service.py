@@ -87,18 +87,14 @@ class PollingService:
 
         notice_state = await self.state_repo.get_notice_state(snapshot.agent.id)
         unread_count = len(snapshot.unread_messages)
-        newest_message_id = snapshot.unread_messages[-1].id
-        if (
-            notice_state.last_notified_unread_count == unread_count
-            and notice_state.last_notified_message_id == newest_message_id
-        ):
+        if notice_state.last_notified_unread_count == unread_count:
             return
 
         await notifier.send_text(chat_id, build_agent_notice(snapshot.agent, unread_count))
         await self.state_repo.update_notice_state(
             snapshot.agent.id,
             unread_count,
-            newest_message_id,
+            None,
         )
 
     async def _clear_stale_notice_states(self, seen_agent_ids: set[str]) -> None:

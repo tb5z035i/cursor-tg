@@ -156,6 +156,40 @@ async def test_polling_service_skips_agent_with_active_followup(
 
 
 @pytest.mark.asyncio
+async def test_inactive_notice_dedup_ignores_unstable_message_ids(
+    settings: Settings,
+    state_repo: StateRepository,
+) -> None:
+    """Notices for inactive agents deduplicate by unread count, not message ID."""
+    session = await state_repo.get_session(1234)
+    session.telegram_chat_id = 5678
+    session.active_agent_id = "agent-active"
+    session.wizard_state = WizardStep.IDLE
+    await state_repo.upsert_session(session)
+
+    snapshot_poll1 = AgentConversationSnapshot(
+        agent=make_agent("agent-other", "Other Agent"),
+        unread_messages=[make_message("uuid-aaa", "response")],
+    )
+    snapshot_poll2 = AgentConversationSnapshot(
+        agent=make_agent("agent-other", "Other Agent"),
+        unread_messages=[make_message("uuid-zzz", "response")],
+    )
+    notifier = FakeNotifier()
+    service = PollingService(
+        settings=settings,
+        state_repo=state_repo,
+        agent_service=FakeAgentService([[snapshot_poll1], [snapshot_poll2]]),
+    )
+
+    await service.poll_once(notifier)
+    await service.poll_once(notifier)
+
+    notice_texts = [text for _, text in notifier.messages if "unread" in text]
+    assert len(notice_texts) == 1
+
+
+@pytest.mark.asyncio
 async def test_polling_service_advances_delivery_cursor(
     settings: Settings,
     state_repo: StateRepository,

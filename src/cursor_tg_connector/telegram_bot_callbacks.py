@@ -14,7 +14,6 @@ from cursor_tg_connector.telegram_bot_common import (
     render_model_keyboard,
     render_repository_keyboard,
 )
-from cursor_tg_connector.utils_formatting import build_agent_created_message
 
 
 async def callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -23,7 +22,10 @@ async def callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         return
 
     services = get_services(context)
-    if update.effective_user is None or update.effective_user.id != services.settings.telegram_allowed_user_id:
+    if (
+        update.effective_user is None
+        or update.effective_user.id != services.settings.telegram_allowed_user_id
+    ):
         await query.answer("Unauthorized", show_alert=True)
         return
 
@@ -82,7 +84,9 @@ async def _select_model(update: Update, context: ContextTypes.DEFAULT_TYPE, mode
             services.settings.telegram_allowed_user_id,
             model_id,
         )
-        session = await services.create_agent_service.get_session(services.settings.telegram_allowed_user_id)
+        session = await services.create_agent_service.get_session(
+            services.settings.telegram_allowed_user_id
+        )
     except CreateAgentError as exc:
         await query.answer(str(exc), show_alert=True)
         return
@@ -95,7 +99,11 @@ async def _select_model(update: Update, context: ContextTypes.DEFAULT_TYPE, mode
     )
 
 
-async def _show_repository_page(update: Update, context: ContextTypes.DEFAULT_TYPE, page: int) -> None:
+async def _show_repository_page(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    page: int,
+) -> None:
     query = update.callback_query
     services = get_services(context)
     try:
@@ -103,17 +111,25 @@ async def _show_repository_page(update: Update, context: ContextTypes.DEFAULT_TY
             services.settings.telegram_allowed_user_id,
             page,
         )
-        session = await services.create_agent_service.get_session(services.settings.telegram_allowed_user_id)
+        session = await services.create_agent_service.get_session(
+            services.settings.telegram_allowed_user_id
+        )
         repositories = session.wizard_payload["repositories"]
     except CreateAgentError as exc:
         await query.answer(str(exc), show_alert=True)
         return
 
     await query.answer()
-    await query.edit_message_reply_markup(reply_markup=render_repository_keyboard(page_data, repositories))
+    await query.edit_message_reply_markup(
+        reply_markup=render_repository_keyboard(page_data, repositories)
+    )
 
 
-async def _select_repository(update: Update, context: ContextTypes.DEFAULT_TYPE, repository_index: int) -> None:
+async def _select_repository(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    repository_index: int,
+) -> None:
     query = update.callback_query
     services = get_services(context)
     try:

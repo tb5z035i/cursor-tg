@@ -4,7 +4,6 @@ from pathlib import Path
 
 import aiosqlite
 
-
 CREATE_SESSION_TABLE = """
 CREATE TABLE IF NOT EXISTS telegram_session (
     telegram_user_id INTEGER PRIMARY KEY,

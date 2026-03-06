@@ -21,7 +21,10 @@ class AgentService:
         self.cursor_client = cursor_client
         self.state_repo = state_repo
 
-    async def list_running_agents_with_unread_counts(self, telegram_user_id: int) -> list[AgentListItem]:
+    async def list_running_agents_with_unread_counts(
+        self,
+        telegram_user_id: int,
+    ) -> list[AgentListItem]:
         session = await self.state_repo.get_session(telegram_user_id)
         running_agents = await self._list_running_agents()
         snapshots = await asyncio.gather(
@@ -46,7 +49,12 @@ class AgentService:
             return None
         return await self.cursor_client.get_agent(session.active_agent_id)
 
-    async def switch_active_agent(self, telegram_user_id: int, chat_id: int, agent_id: str) -> Agent:
+    async def switch_active_agent(
+        self,
+        telegram_user_id: int,
+        chat_id: int,
+        agent_id: str,
+    ) -> Agent:
         agent = await self.cursor_client.get_agent(agent_id)
         await self.state_repo.update_chat_context(telegram_user_id, chat_id)
         await self.state_repo.set_active_agent(telegram_user_id, agent_id)
@@ -63,7 +71,10 @@ class AgentService:
         snapshot = await self.get_unread_snapshot(agent_id)
         to_send = snapshot.unread_messages[:limit]
         for message in to_send:
-            await notifier.send_text(chat_id, build_active_agent_message(snapshot.agent, message.text))
+            await notifier.send_text(
+                chat_id,
+                build_active_agent_message(snapshot.agent, message.text),
+            )
         await self.state_repo.mark_messages_delivered(agent_id, [message.id for message in to_send])
         return len(to_send)
 
@@ -77,12 +88,16 @@ class AgentService:
             agent_id,
             [message.id for message in assistant_messages],
         )
-        unread_messages = [message for message in assistant_messages if message.id not in delivered_ids]
+        unread_messages = [
+            message for message in assistant_messages if message.id not in delivered_ids
+        ]
         return AgentConversationSnapshot(agent=agent, unread_messages=unread_messages)
 
     async def list_running_snapshots(self) -> list[AgentConversationSnapshot]:
         running_agents = await self._list_running_agents()
-        return await asyncio.gather(*(self.get_unread_snapshot(agent.id) for agent in running_agents))
+        return await asyncio.gather(
+            *(self.get_unread_snapshot(agent.id) for agent in running_agents)
+        )
 
     async def _list_running_agents(self) -> list[Agent]:
         agents = await self.cursor_client.list_agents()

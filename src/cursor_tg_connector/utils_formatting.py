@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-from typing import Iterable
+from collections.abc import Iterable
 
 from cursor_tg_connector.cursor_api_models import Agent, Repository
-
 
 TELEGRAM_MESSAGE_LIMIT = 4000
 
@@ -24,7 +23,10 @@ def build_agent_label(agent: Agent, unread_count: int) -> str:
 
 
 def build_agent_notice(agent: Agent, unread_count: int) -> str:
-    return f"Agent {agent.name or agent.id} has {unread_count} unread message(s). Use /agents to switch."
+    return (
+        f"Agent {agent.name or agent.id} has {unread_count} unread message(s). "
+        "Use /agents to switch."
+    )
 
 
 def build_active_agent_message(agent: Agent, text: str) -> str:

@@ -9,11 +9,10 @@ from cursor_tg_connector.telegram_bot_common import (
     render_agent_keyboard,
     render_model_keyboard,
 )
-from cursor_tg_connector.utils_formatting import build_agent_created_message, format_command_list
+from cursor_tg_connector.utils_formatting import format_command_list
 
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    services = get_services(context)
     if not await _authorize_and_record_chat(update, context):
         return
 
@@ -87,7 +86,9 @@ async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         return
 
     services = get_services(context)
-    cancelled = await services.create_agent_service.cancel(services.settings.telegram_allowed_user_id)
+    cancelled = await services.create_agent_service.cancel(
+        services.settings.telegram_allowed_user_id
+    )
     if cancelled:
         await update.effective_message.reply_text("Create-agent wizard cancelled.")
     else:

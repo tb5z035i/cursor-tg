@@ -29,7 +29,9 @@ class CreateAgentService:
     async def start_wizard(self, telegram_user_id: int, chat_id: int) -> list[str]:
         session = await self.state_repo.update_chat_context(telegram_user_id, chat_id)
         if session.wizard_state != WizardStep.IDLE:
-            raise CreateAgentError("A create-agent wizard is already in progress. Use /cancel to exit it.")
+            raise CreateAgentError(
+                "A create-agent wizard is already in progress. Use /cancel to exit it."
+            )
 
         if self._is_rate_limited(session):
             raise CreateAgentError("You can only start /newagent once per minute.")
@@ -46,7 +48,12 @@ class CreateAgentService:
         )
         return models
 
-    async def get_model_page(self, telegram_user_id: int, page: int, per_page: int = 8) -> RepositoryPage:
+    async def get_model_page(
+        self,
+        telegram_user_id: int,
+        page: int,
+        per_page: int = 8,
+    ) -> RepositoryPage:
         session = await self.state_repo.get_session(telegram_user_id)
         models = self._wizard_list(session, "models")
         items, current_page, total_pages = paginate(models, page, per_page)
@@ -56,7 +63,9 @@ class CreateAgentService:
         session = await self.state_repo.get_session(telegram_user_id)
         models = self._wizard_list(session, "models")
         if session.wizard_state != WizardStep.WAITING_MODEL or model_id not in models:
-            raise CreateAgentError("That model selection is no longer valid. Run /newagent again.")
+            raise CreateAgentError(
+                "That model selection is no longer valid. Run /newagent again."
+            )
 
         repositories = await self.cursor_client.list_repositories()
         if not repositories:
@@ -66,7 +75,12 @@ class CreateAgentService:
         await self.state_repo.set_wizard(telegram_user_id, WizardStep.WAITING_REPOSITORY, payload)
         return self.get_repository_page_from_payload(repositories, 0)
 
-    async def get_repository_page(self, telegram_user_id: int, page: int, per_page: int = 8) -> RepositoryPage:
+    async def get_repository_page(
+        self,
+        telegram_user_id: int,
+        page: int,
+        per_page: int = 8,
+    ) -> RepositoryPage:
         session = await self.state_repo.get_session(telegram_user_id)
         repositories = self._wizard_list(session, "repositories")
         return self.get_repository_page_from_payload(repositories, page, per_page)
@@ -83,8 +97,13 @@ class CreateAgentService:
     async def choose_repository(self, telegram_user_id: int, repository_index: int) -> str:
         session = await self.state_repo.get_session(telegram_user_id)
         repositories = self._wizard_list(session, "repositories")
-        if session.wizard_state != WizardStep.WAITING_REPOSITORY or repository_index >= len(repositories):
-            raise CreateAgentError("That repository selection is no longer valid. Run /newagent again.")
+        if (
+            session.wizard_state != WizardStep.WAITING_REPOSITORY
+            or repository_index >= len(repositories)
+        ):
+            raise CreateAgentError(
+                "That repository selection is no longer valid. Run /newagent again."
+            )
 
         payload = {
             "model": session.wizard_payload["model"],
@@ -145,5 +164,7 @@ class CreateAgentService:
     def _wizard_list(self, session: SessionState, key: str) -> list[str]:
         values = session.wizard_payload.get(key)
         if not isinstance(values, list) or not all(isinstance(item, str) for item in values):
-            raise CreateAgentError("Wizard state is missing required options. Run /newagent again.")
+            raise CreateAgentError(
+                "Wizard state is missing required options. Run /newagent again."
+            )
         return values

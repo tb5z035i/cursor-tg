@@ -7,13 +7,20 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
 
     telegram_bot_token: str = Field(alias="TELEGRAM_BOT_TOKEN")
     telegram_allowed_user_id: int = Field(alias="TELEGRAM_ALLOWED_USER_ID")
     telegram_chat_id: int | None = Field(default=None, alias="TELEGRAM_CHAT_ID")
     cursor_api_key: str = Field(alias="CURSOR_API_KEY")
-    cursor_api_base_url: str = Field(default="https://api.cursor.com", alias="CURSOR_API_BASE_URL")
+    cursor_api_base_url: str = Field(
+        default="https://api.cursor.com",
+        alias="CURSOR_API_BASE_URL",
+    )
     sqlite_path: Path = Field(default=Path("/data/connector.db"), alias="SQLITE_PATH")
     poll_interval_seconds: float = Field(default=20.0, alias="POLL_INTERVAL_SECONDS")
     followup_poll_interval_seconds: float = Field(
@@ -26,7 +33,11 @@ class Settings(BaseSettings):
     )
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
 
-    @field_validator("poll_interval_seconds", "followup_poll_interval_seconds", "followup_poll_timeout_seconds")
+    @field_validator(
+        "poll_interval_seconds",
+        "followup_poll_interval_seconds",
+        "followup_poll_timeout_seconds",
+    )
     @classmethod
     def validate_positive_interval(cls, value: float) -> float:
         if value <= 0:

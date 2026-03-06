@@ -5,7 +5,10 @@ import logging
 
 from cursor_tg_connector.config import Settings
 from cursor_tg_connector.persistence_state_repo import StateRepository
-from cursor_tg_connector.services_agent_service import AgentConversationSnapshot, AgentService
+from cursor_tg_connector.services_agent_service import (
+    AgentConversationSnapshot,
+    AgentService,
+)
 from cursor_tg_connector.utils_formatting import build_active_agent_message, build_agent_notice
 
 logger = logging.getLogger(__name__)
@@ -56,7 +59,10 @@ class PollingService:
     ) -> None:
         unread_messages = snapshot.unread_messages[:10]
         for message in unread_messages:
-            await notifier.send_text(chat_id, build_active_agent_message(snapshot.agent, message.text))
+            await notifier.send_text(
+                chat_id,
+                build_active_agent_message(snapshot.agent, message.text),
+            )
 
         await self.state_repo.mark_messages_delivered(
             snapshot.agent.id,
@@ -85,7 +91,11 @@ class PollingService:
             return
 
         await notifier.send_text(chat_id, build_agent_notice(snapshot.agent, unread_count))
-        await self.state_repo.update_notice_state(snapshot.agent.id, unread_count, newest_message_id)
+        await self.state_repo.update_notice_state(
+            snapshot.agent.id,
+            unread_count,
+            newest_message_id,
+        )
 
     async def _clear_stale_notice_states(self, seen_agent_ids: set[str]) -> None:
         session = await self.state_repo.get_session(self.settings.telegram_allowed_user_id)

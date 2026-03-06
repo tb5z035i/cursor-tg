@@ -1,0 +1,126 @@
+from __future__ import annotations
+
+from collections import deque
+
+import pytest
+
+from cursor_tg_connector.config import Settings
+from cursor_tg_connector.cursor_api_models import Agent, ConversationMessage
+from cursor_tg_connector.domain_types import WizardStep
+from cursor_tg_connector.persistence_state_repo import StateRepository
+from cursor_tg_connector.services_agent_service import AgentConversationSnapshot
+from cursor_tg_connector.services_polling_service import PollingService
+
+
+class FakeNotifier:
+    def __init__(self) -> None:
+        self.messages: list[tuple[int, str]] = []
+
+    async def send_text(self, chat_id: int, text: str) -> None:
+        self.messages.append((chat_id, text))
+
+
+class FakeAgentService:
+    def __init__(self, poll_batches: list[list[AgentConversationSnapshot]]) -> None:
+        self.poll_batches = deque(poll_batches)
+
+    async def list_running_snapshots(self) -> list[AgentConversationSnapshot]:
+        if len(self.poll_batches) > 1:
+            return self.poll_batches.popleft()
+        return self.poll_batches[0]
+
+
+def make_agent(agent_id: str, name: str) -> Agent:
+    return Agent.model_validate(
+        {
+            "id": agent_id,
+            "name": name,
+            "status": "RUNNING",
+            "source": {"repository": "https://github.com/acme/repo", "ref": "main"},
+            "target": {"url": f"https://cursor.com/{agent_id}", "branchName": "cursor/test"},
+            "createdAt": "2024-01-01T00:00:00Z",
+        }
+    )
+
+
+def make_message(message_id: str, text: str) -> ConversationMessage:
+    return ConversationMessage.model_validate(
+        {
+            "id": message_id,
+            "type": "assistant_message",
+            "text": text,
+        }
+    )
+
+
+@pytest.mark.asyncio
+async def test_polling_service_sends_active_contents_and_inactive_notice(
+    settings: Settings,
+    state_repo: StateRepository,
+) -> None:
+    session = await state_repo.get_session(1234)
+    session.telegram_chat_id = 5678
+    session.active_agent_id = "agent-active"
+    session.wizard_state = WizardStep.IDLE
+    await state_repo.upsert_session(session)
+
+    active_snapshot = AgentConversationSnapshot(
+        agent=make_agent("agent-active", "Active Agent"),
+        unread_messages=[
+            make_message("msg-1", "first response"),
+            make_message("msg-2", "second response"),
+        ],
+    )
+    inactive_snapshot = AgentConversationSnapshot(
+        agent=make_agent("agent-other", "Other Agent"),
+        unread_messages=[make_message("msg-3", "hidden response")],
+    )
+    no_unread_active_snapshot = AgentConversationSnapshot(
+        agent=make_agent("agent-active", "Active Agent"),
+        unread_messages=[],
+    )
+    notifier = FakeNotifier()
+    service = PollingService(
+        settings=settings,
+        state_repo=state_repo,
+        agent_service=FakeAgentService(
+            [
+                [active_snapshot, inactive_snapshot],
+                [no_unread_active_snapshot, inactive_snapshot],
+            ]
+        ),
+    )
+
+    await service.poll_once(notifier)
+    await service.poll_once(notifier)
+
+    texts = [text for _, text in notifier.messages]
+    assert texts.count("[Active Agent]\nfirst response") == 1
+    assert texts.count("[Active Agent]\nsecond response") == 1
+    assert texts.count("Agent Other Agent has 1 unread message(s). Use /agents to switch.") == 1
+
+
+@pytest.mark.asyncio
+async def test_polling_service_caps_active_agent_delivery_to_ten(
+    settings: Settings,
+    state_repo: StateRepository,
+) -> None:
+    session = await state_repo.get_session(1234)
+    session.telegram_chat_id = 5678
+    session.active_agent_id = "agent-active"
+    await state_repo.upsert_session(session)
+
+    snapshot = AgentConversationSnapshot(
+        agent=make_agent("agent-active", "Active Agent"),
+        unread_messages=[make_message(f"msg-{index}", f"text {index}") for index in range(12)],
+    )
+    notifier = FakeNotifier()
+    service = PollingService(
+        settings=settings,
+        state_repo=state_repo,
+        agent_service=FakeAgentService([[snapshot]]),
+    )
+
+    await service.poll_once(notifier)
+
+    assert len(notifier.messages) == 10

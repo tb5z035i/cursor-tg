@@ -27,7 +27,13 @@ class FollowupService:
         self.state_repo = state_repo
         self.agent_service = agent_service
 
-    async def send_followup(self, telegram_user_id: int, chat_id: int, text: str, notifier) -> int:
+    async def send_followup(
+        self,
+        telegram_user_id: int,
+        chat_id: int,
+        text: str,
+        notifier,
+    ) -> int:
         text = text.strip()
         if not text:
             raise FollowupError("Message cannot be empty.")
@@ -60,7 +66,10 @@ class FollowupService:
                 continue
 
             for message in new_messages[:10]:
-                await notifier.send_text(chat_id, build_active_agent_message(snapshot.agent, message.text))
+                await notifier.send_text(
+                    chat_id,
+                    build_active_agent_message(snapshot.agent, message.text),
+                )
             await self.state_repo.mark_messages_delivered(
                 session.active_agent_id,
                 [message.id for message in new_messages[:10]],

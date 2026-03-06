@@ -24,7 +24,9 @@ async def text_message_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         services.settings.telegram_allowed_user_id,
         update.effective_chat.id,
     )
-    session = await services.create_agent_service.get_session(services.settings.telegram_allowed_user_id)
+    session = await services.create_agent_service.get_session(
+        services.settings.telegram_allowed_user_id
+    )
     text = update.effective_message.text or ""
 
     if session.wizard_state == WizardStep.WAITING_MODEL:
@@ -44,7 +46,9 @@ async def text_message_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         except CreateAgentError as exc:
             await update.effective_message.reply_text(str(exc))
             return
-        await update.effective_message.reply_text("Step 4/4: Send the prompt text for the new agent.")
+        await update.effective_message.reply_text(
+            "Step 4/4: Send the prompt text for the new agent."
+        )
         return
 
     if session.wizard_state == WizardStep.WAITING_PROMPT:

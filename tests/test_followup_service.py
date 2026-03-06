@@ -137,3 +137,55 @@ async def test_followup_service_only_relays_new_messages(settings: Settings, sta
 
     assert delivered_count == 1
     assert notifier.messages == ["5678:[Active Agent]\nNew result"]
+
+
+@pytest.mark.asyncio
+async def test_followup_service_registers_active_followup(settings: Settings, state_repo) -> None:
+    session = await state_repo.get_session(1234)
+    session.telegram_chat_id = 5678
+    session.active_agent_id = "agent-1"
+    session.wizard_state = WizardStep.IDLE
+    await state_repo.upsert_session(session)
+
+    active_followups: set[str] = set()
+    notifier = FakeNotifier()
+    service = FollowupService(
+        settings=settings,
+        cursor_client=FakeCursorClient(),
+        state_repo=state_repo,
+        agent_service=FakeAgentService(),
+        active_followups=active_followups,
+    )
+
+    await service.send_followup(1234, 5678, "Please continue", notifier)
+
+    assert "agent-1" not in active_followups
+
+
+@pytest.mark.asyncio
+async def test_followup_service_clears_flag_on_error(settings: Settings, state_repo) -> None:
+    session = await state_repo.get_session(1234)
+    session.telegram_chat_id = 5678
+    session.active_agent_id = "agent-1"
+    session.wizard_state = WizardStep.IDLE
+    await state_repo.upsert_session(session)
+
+    active_followups: set[str] = set()
+
+    class FailingAgentService(FakeAgentService):
+        async def deliver_active_agent_unread(self, **kwargs) -> int:
+            raise RuntimeError("boom")
+
+    notifier = FakeNotifier()
+    service = FollowupService(
+        settings=settings,
+        cursor_client=FakeCursorClient(),
+        state_repo=state_repo,
+        agent_service=FailingAgentService(),
+        active_followups=active_followups,
+    )
+
+    with pytest.raises(RuntimeError, match="boom"):
+        await service.send_followup(1234, 5678, "Please continue", notifier)
+
+    assert "agent-1" not in active_followups

@@ -75,7 +75,7 @@ class AgentService:
                 chat_id,
                 build_active_agent_message(snapshot.agent, message.text),
             )
-        await self.state_repo.mark_messages_delivered(agent_id, [message.id for message in to_send])
+            await self.state_repo.mark_messages_delivered(agent_id, [message.id])
         return len(to_send)
 
     async def get_unread_snapshot(self, agent_id: str) -> AgentConversationSnapshot:

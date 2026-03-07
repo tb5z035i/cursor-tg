@@ -23,6 +23,7 @@ _HELP_TEXT = (
     "\n"
     "Usage:\n"
     "• Send /agents to see running agents and switch the active one.\n"
+    "• Send /unfocus to clear the current active agent selection.\n"
     "• Send /stop to stop the currently selected running agent.\n"
     "• Send /newagent to create a new agent (model → repo → branch → prompt).\n"
     "• Send any text message to follow up with the active agent.\n"
@@ -84,6 +85,23 @@ async def clear_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
     await update.effective_message.reply_text(
         f"Cleared all unread messages for {agent_name}."
+    )
+
+
+async def unfocus_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not await _authorize_and_record_chat(update, context):
+        return
+
+    services = get_services(context)
+    cleared = await services.agent_service.clear_active_agent(
+        services.settings.telegram_allowed_user_id,
+    )
+    if not cleared:
+        await update.effective_message.reply_text("No active agent is currently selected.")
+        return
+
+    await update.effective_message.reply_text(
+        "Cleared the active agent selection. Use /agents to pick one again."
     )
 
 

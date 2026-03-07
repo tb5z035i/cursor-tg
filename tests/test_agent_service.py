@@ -73,6 +73,22 @@ async def test_list_agents_includes_unread_counts(state_repo) -> None:
 
 
 @pytest.mark.asyncio
+async def test_clear_active_agent_unsets_selection(state_repo) -> None:
+    client = FakeCursorClient()
+    service = AgentService(client, state_repo)
+
+    session = await state_repo.get_session(1234)
+    session.active_agent_id = "agent-1"
+    await state_repo.upsert_session(session)
+
+    cleared = await service.clear_active_agent(1234)
+
+    updated_session = await state_repo.get_session(1234)
+    assert cleared is True
+    assert updated_session.active_agent_id is None
+
+
+@pytest.mark.asyncio
 async def test_stop_active_agent_clears_active_selection(state_repo) -> None:
     client = FakeCursorClient()
     service = AgentService(client, state_repo)

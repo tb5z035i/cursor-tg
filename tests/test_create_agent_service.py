@@ -4,7 +4,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from cursor_tg_connector.cursor_api_models import Agent
+from cursor_tg_connector.cursor_api_models import Agent, AgentConversation
 from cursor_tg_connector.domain_types import WizardStep
 from cursor_tg_connector.services_create_agent_service import CreateAgentError, CreateAgentService
 
@@ -35,6 +35,7 @@ class FakeCursorClient:
         ]
         self.agents: list[Agent] = []
         self.created_agent_calls: list[tuple[str, str, str, str]] = []
+        self.conversations: dict[str, list[dict[str, str]]] = {}
 
     async def list_models(self) -> list[str]:
         return self.models
@@ -63,6 +64,14 @@ class FakeCursorClient:
                 "source": {"repository": repository_url, "ref": base_branch},
                 "target": {"url": "https://cursor.com/agent-123", "branchName": "cursor/branch"},
                 "createdAt": "2024-01-01T00:00:00Z",
+            }
+        )
+
+    async def get_conversation(self, agent_id: str) -> AgentConversation:
+        return AgentConversation.model_validate(
+            {
+                "id": agent_id,
+                "messages": self.conversations.get(agent_id, []),
             }
         )
 
@@ -194,3 +203,33 @@ async def test_create_agent_start_is_rate_limited(state_repo) -> None:
 
     with pytest.raises(CreateAgentError, match="once per minute"):
         await service.start_wizard(1234, 5678)
+
+
+@pytest.mark.asyncio
+async def test_finish_prompt_silences_previous_active_agent_unread_state(state_repo) -> None:
+    client = FakeCursorClient()
+    client.conversations["agent-old"] = [
+        {"id": "m1", "type": "assistant_message", "text": "old one"},
+        {"id": "m2", "type": "assistant_message", "text": "old two"},
+    ]
+    service = CreateAgentService(client, state_repo)
+
+    session = await state_repo.get_session(1234)
+    session.active_agent_id = "agent-old"
+    await state_repo.upsert_session(session)
+    await state_repo.update_notice_state("agent-old", 2, None)
+
+    await service.start_wizard(1234, 5678)
+    await service.choose_model(1234, "gpt-5.4")
+    await service.choose_repository(1234, 0)
+    await service.save_branch(1234, "main")
+
+    await service.finish_prompt(1234, "Create the new agent")
+
+    updated_session = await service.get_session(1234)
+    old_cursor = await state_repo.get_delivery_cursor("agent-old")
+    old_notice = await state_repo.get_notice_state("agent-old")
+
+    assert updated_session.active_agent_id == "agent-123"
+    assert old_cursor == 2
+    assert old_notice.last_notified_unread_count == 0

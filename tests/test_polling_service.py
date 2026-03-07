@@ -159,6 +159,33 @@ async def test_polling_service_skips_agent_with_active_followup(
 
 
 @pytest.mark.asyncio
+async def test_polling_service_skips_notifications_during_create_wizard(
+    settings: Settings,
+    state_repo: StateRepository,
+) -> None:
+    session = await state_repo.get_session(1234)
+    session.telegram_chat_id = 5678
+    session.active_agent_id = "agent-active"
+    session.wizard_state = WizardStep.WAITING_PROMPT
+    await state_repo.upsert_session(session)
+
+    snapshot = AgentConversationSnapshot(
+        agent=make_agent("agent-active", "Active Agent"),
+        unread_messages=[make_message("msg-1", "response")],
+    )
+    notifier = FakeNotifier()
+    service = PollingService(
+        settings=settings,
+        state_repo=state_repo,
+        agent_service=FakeAgentService([[snapshot]]),
+    )
+
+    await service.poll_once(notifier)
+
+    assert notifier.messages == []
+
+
+@pytest.mark.asyncio
 async def test_inactive_notice_dedup_ignores_unstable_message_ids(
     settings: Settings,
     state_repo: StateRepository,

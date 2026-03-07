@@ -4,6 +4,7 @@ import asyncio
 import logging
 
 from cursor_tg_connector.config import Settings
+from cursor_tg_connector.domain_types import WizardStep
 from cursor_tg_connector.persistence_state_repo import StateRepository
 from cursor_tg_connector.services_agent_service import (
     AgentConversationSnapshot,
@@ -41,6 +42,12 @@ class PollingService:
             chat_id = self.settings.resolve_chat_id(session.telegram_chat_id)
             if chat_id is None:
                 logger.info("Skipping poll because chat_id is not known yet")
+                return
+            if session.wizard_state != WizardStep.IDLE:
+                logger.info(
+                    "Skipping poll while create-agent wizard is active (%s)",
+                    session.wizard_state,
+                )
                 return
 
             snapshots = await self.agent_service.list_running_snapshots()

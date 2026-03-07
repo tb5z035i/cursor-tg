@@ -61,6 +61,13 @@ class AgentService:
             return None
         return await self.cursor_client.get_agent(session.active_agent_id)
 
+    async def clear_active_agent(self, telegram_user_id: int) -> bool:
+        session = await self.state_repo.get_session(telegram_user_id)
+        if session.active_agent_id is None:
+            return False
+        await self.state_repo.set_active_agent(telegram_user_id, None)
+        return True
+
     async def switch_active_agent(
         self,
         telegram_user_id: int,

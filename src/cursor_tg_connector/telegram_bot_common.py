@@ -10,18 +10,23 @@ from cursor_tg_connector.services_agent_service import AgentService
 from cursor_tg_connector.services_create_agent_service import CreateAgentService, RepositoryPage
 from cursor_tg_connector.services_followup_service import FollowupService
 from cursor_tg_connector.services_polling_service import PollingService
-
-SWITCH_AGENT_PREFIX = "agent:switch:"
-MODEL_SELECT_PREFIX = "wizard:model:"
-MODEL_PAGE_PREFIX = "wizard:model_page:"
-REPO_SELECT_PREFIX = "wizard:repo:"
-REPO_PAGE_PREFIX = "wizard:repo_page:"
-BRANCH_SELECT_PREFIX = "wizard:branch:"
-BRANCH_PAGE_PREFIX = "wizard:branch_page:"
+from cursor_tg_connector.telegram_bot_constants import (
+    BRANCH_PAGE_PREFIX,
+    BRANCH_SELECT_PREFIX,
+    MODEL_PAGE_PREFIX,
+    MODEL_SELECT_PREFIX,
+    REPO_PAGE_PREFIX,
+    REPO_SELECT_PREFIX,
+    SWITCH_AGENT_PREFIX,
+)
 
 BOT_COMMANDS: list[tuple[str, str]] = [
     ("current", "Show info about the current active agent"),
-    ("agents", "List agents and switch the active one"),
+    ("agents", "List agents in a summary table"),
+    ("focus", "Choose the active agent from clickable options"),
+    ("configure_unread", "Configure unread messages for unselected agents"),
+    ("unfocus", "Clear the active agent selection"),
+    ("stop", "Stop the current running active agent"),
     ("clear", "Mark all unread messages as read for the active agent"),
     ("newagent", "Create a new Cursor cloud agent"),
     ("cancel", "Cancel an in-progress create-agent wizard"),

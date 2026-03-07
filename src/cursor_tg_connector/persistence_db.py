@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS telegram_session (
     telegram_user_id INTEGER PRIMARY KEY,
     telegram_chat_id INTEGER,
     active_agent_id TEXT,
+    unselected_agent_unread_mode TEXT NOT NULL DEFAULT 'count',
     wizard_state TEXT NOT NULL DEFAULT 'idle',
     wizard_payload_json TEXT NOT NULL DEFAULT '{}',
     last_create_agent_at TEXT,
@@ -53,6 +54,12 @@ class Database:
         async with aiosqlite.connect(self.path) as db:
             await db.execute("PRAGMA journal_mode=WAL")
             await db.execute(CREATE_SESSION_TABLE)
+            await _ensure_column(
+                db,
+                table_name="telegram_session",
+                column_name="unselected_agent_unread_mode",
+                definition="TEXT NOT NULL DEFAULT 'count'",
+            )
             await db.execute(CREATE_MESSAGE_DELIVERY_TABLE)
             await db.execute(CREATE_NOTICE_STATE_TABLE)
             await db.execute(CREATE_DELIVERY_CURSOR_TABLE)
@@ -62,3 +69,18 @@ class Database:
         db = await aiosqlite.connect(self.path)
         db.row_factory = aiosqlite.Row
         return db
+
+
+async def _ensure_column(
+    db: aiosqlite.Connection,
+    *,
+    table_name: str,
+    column_name: str,
+    definition: str,
+) -> None:
+    cursor = await db.execute(f"PRAGMA table_info({table_name})")
+    rows = await cursor.fetchall()
+    existing_columns = {row[1] for row in rows}
+    if column_name in existing_columns:
+        return
+    await db.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {definition}")

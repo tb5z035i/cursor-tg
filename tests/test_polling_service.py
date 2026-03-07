@@ -3,10 +3,14 @@ from __future__ import annotations
 from collections import deque
 
 import pytest
+from telegram import InlineKeyboardMarkup
 
 from cursor_tg_connector.config import Settings
 from cursor_tg_connector.cursor_api_models import Agent, ConversationMessage
-from cursor_tg_connector.domain_types import WizardStep
+from cursor_tg_connector.domain_types import (
+    UnselectedAgentUnreadMode,
+    WizardStep,
+)
 from cursor_tg_connector.persistence_state_repo import StateRepository
 from cursor_tg_connector.services_agent_service import AgentConversationSnapshot
 from cursor_tg_connector.services_polling_service import PollingService
@@ -14,10 +18,15 @@ from cursor_tg_connector.services_polling_service import PollingService
 
 class FakeNotifier:
     def __init__(self) -> None:
-        self.messages: list[tuple[int, str]] = []
+        self.messages: list[tuple[int, str, InlineKeyboardMarkup | None]] = []
 
-    async def send_text(self, chat_id: int, text: str) -> None:
-        self.messages.append((chat_id, text))
+    async def send_text(
+        self,
+        chat_id: int,
+        text: str,
+        reply_markup: InlineKeyboardMarkup | None = None,
+    ) -> None:
+        self.messages.append((chat_id, text, reply_markup))
 
     async def send_typing(self, chat_id: int) -> None:
         pass
@@ -97,10 +106,20 @@ async def test_polling_service_sends_active_contents_and_inactive_notice(
     await service.poll_once(notifier)
     await service.poll_once(notifier)
 
-    texts = [text for _, text in notifier.messages]
+    texts = [text for _, text, _ in notifier.messages]
     assert texts.count("> **Active Agent**\nfirst response") == 1
     assert texts.count("> **Active Agent**\nsecond response") == 1
-    assert texts.count("> **Other Agent**\n1 unread message(s). Use /agents to switch.") == 1
+    assert (
+        texts.count(
+            "> **Other Agent**\n1 unread message(s). Tap below or use /focus to switch."
+        )
+        == 1
+    )
+    notice_markup = next(
+        markup for _, text, markup in notifier.messages if "1 unread message(s)." in text
+    )
+    assert notice_markup is not None
+    assert notice_markup.inline_keyboard[0][0].callback_data == "agent:switch:agent-other"
 
 
 @pytest.mark.asyncio
@@ -159,6 +178,33 @@ async def test_polling_service_skips_agent_with_active_followup(
 
 
 @pytest.mark.asyncio
+async def test_polling_service_skips_notifications_during_create_wizard(
+    settings: Settings,
+    state_repo: StateRepository,
+) -> None:
+    session = await state_repo.get_session(1234)
+    session.telegram_chat_id = 5678
+    session.active_agent_id = "agent-active"
+    session.wizard_state = WizardStep.WAITING_PROMPT
+    await state_repo.upsert_session(session)
+
+    snapshot = AgentConversationSnapshot(
+        agent=make_agent("agent-active", "Active Agent"),
+        unread_messages=[make_message("msg-1", "response")],
+    )
+    notifier = FakeNotifier()
+    service = PollingService(
+        settings=settings,
+        state_repo=state_repo,
+        agent_service=FakeAgentService([[snapshot]]),
+    )
+
+    await service.poll_once(notifier)
+
+    assert notifier.messages == []
+
+
+@pytest.mark.asyncio
 async def test_inactive_notice_dedup_ignores_unstable_message_ids(
     settings: Settings,
     state_repo: StateRepository,
@@ -188,7 +234,7 @@ async def test_inactive_notice_dedup_ignores_unstable_message_ids(
     await service.poll_once(notifier)
     await service.poll_once(notifier)
 
-    notice_texts = [text for _, text in notifier.messages if "unread" in text]
+    notice_texts = [text for _, text, _ in notifier.messages if "unread" in text]
     assert len(notice_texts) == 1
 
 
@@ -223,3 +269,72 @@ async def test_polling_service_advances_delivery_cursor(
 
     cursor = await state_repo.get_delivery_cursor("agent-active")
     assert cursor == 5
+
+
+@pytest.mark.asyncio
+async def test_polling_service_can_deliver_full_text_for_inactive_agents(
+    settings: Settings,
+    state_repo: StateRepository,
+) -> None:
+    session = await state_repo.get_session(1234)
+    session.telegram_chat_id = 5678
+    session.active_agent_id = "agent-active"
+    session.unselected_agent_unread_mode = UnselectedAgentUnreadMode.FULL
+    await state_repo.upsert_session(session)
+
+    inactive_snapshot = AgentConversationSnapshot(
+        agent=make_agent("agent-other", "Other Agent"),
+        unread_messages=[
+            make_message("msg-1", "first hidden response"),
+            make_message("msg-2", "second hidden response"),
+        ],
+        delivered_count=4,
+    )
+    notifier = FakeNotifier()
+    service = PollingService(
+        settings=settings,
+        state_repo=state_repo,
+        agent_service=FakeAgentService([[inactive_snapshot]]),
+    )
+
+    await service.poll_once(notifier)
+
+    assert [text for _, text, _ in notifier.messages] == [
+        "> **Other Agent**\nfirst hidden response",
+        "> **Other Agent**\nsecond hidden response",
+    ]
+    first_markup = notifier.messages[0][2]
+    second_markup = notifier.messages[1][2]
+    assert first_markup is not None
+    assert first_markup.inline_keyboard[0][0].callback_data == "agent:switch:agent-other"
+    assert second_markup is None
+    cursor = await state_repo.get_delivery_cursor("agent-other")
+    assert cursor == 6
+
+
+@pytest.mark.asyncio
+async def test_polling_service_can_hide_inactive_agent_notifications(
+    settings: Settings,
+    state_repo: StateRepository,
+) -> None:
+    session = await state_repo.get_session(1234)
+    session.telegram_chat_id = 5678
+    session.active_agent_id = "agent-active"
+    session.unselected_agent_unread_mode = UnselectedAgentUnreadMode.NONE
+    await state_repo.upsert_session(session)
+
+    inactive_snapshot = AgentConversationSnapshot(
+        agent=make_agent("agent-other", "Other Agent"),
+        unread_messages=[make_message("msg-1", "hidden response")],
+    )
+    notifier = FakeNotifier()
+    service = PollingService(
+        settings=settings,
+        state_repo=state_repo,
+        agent_service=FakeAgentService([[inactive_snapshot]]),
+    )
+
+    await service.poll_once(notifier)
+
+    assert notifier.messages == []
+    assert await state_repo.get_delivery_cursor("agent-other") is None

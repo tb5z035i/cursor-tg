@@ -70,7 +70,7 @@ def build_agent_label(agent: Agent, unread_count: int) -> str:
 def build_agent_notice(agent: Agent, unread_count: int) -> str:
     return (
         f"> **{agent.name or agent.id}**\n"
-        f"{unread_count} unread message(s). Use /agents to switch."
+        f"{unread_count} unread message(s). Tap below or use /focus to switch."
     )
 
 
@@ -170,7 +170,7 @@ def build_agents_summary_message(items: Iterable[AgentListItem]) -> str:
         "<pre>"
         f"{html.escape(table)}"
         "</pre>\n"
-        "Tap a button below to switch the active agent."
+        "Use /focus to switch the active agent."
     )
 
 

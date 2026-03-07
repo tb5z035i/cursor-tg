@@ -4,7 +4,11 @@ import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from cursor_tg_connector.domain_types import SessionState, WizardStep
+from cursor_tg_connector.domain_types import (
+    SessionState,
+    UnselectedAgentUnreadMode,
+    WizardStep,
+)
 from cursor_tg_connector.persistence_db import Database
 
 
@@ -37,6 +41,9 @@ class StateRepository:
             telegram_user_id=row["telegram_user_id"],
             telegram_chat_id=row["telegram_chat_id"],
             active_agent_id=row["active_agent_id"],
+            unselected_agent_unread_mode=UnselectedAgentUnreadMode(
+                row["unselected_agent_unread_mode"]
+            ),
             wizard_state=WizardStep(row["wizard_state"]),
             wizard_payload=json.loads(row["wizard_payload_json"] or "{}"),
             last_create_agent_at=row["last_create_agent_at"],
@@ -55,16 +62,18 @@ class StateRepository:
                     telegram_user_id,
                     telegram_chat_id,
                     active_agent_id,
+                    unselected_agent_unread_mode,
                     wizard_state,
                     wizard_payload_json,
                     last_create_agent_at,
                     created_at,
                     updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(telegram_user_id) DO UPDATE SET
                     telegram_chat_id = excluded.telegram_chat_id,
                     active_agent_id = excluded.active_agent_id,
+                    unselected_agent_unread_mode = excluded.unselected_agent_unread_mode,
                     wizard_state = excluded.wizard_state,
                     wizard_payload_json = excluded.wizard_payload_json,
                     last_create_agent_at = excluded.last_create_agent_at,
@@ -74,6 +83,7 @@ class StateRepository:
                     session.telegram_user_id,
                     session.telegram_chat_id,
                     session.active_agent_id,
+                    session.unselected_agent_unread_mode.value,
                     session.wizard_state.value,
                     json.dumps(session.wizard_payload),
                     session.last_create_agent_at,
@@ -94,6 +104,16 @@ class StateRepository:
     async def set_active_agent(self, telegram_user_id: int, agent_id: str | None) -> SessionState:
         session = await self.get_session(telegram_user_id)
         session.active_agent_id = agent_id
+        await self.upsert_session(session)
+        return session
+
+    async def set_unselected_agent_unread_mode(
+        self,
+        telegram_user_id: int,
+        mode: UnselectedAgentUnreadMode,
+    ) -> SessionState:
+        session = await self.get_session(telegram_user_id)
+        session.unselected_agent_unread_mode = mode
         await self.upsert_session(session)
         return session
 

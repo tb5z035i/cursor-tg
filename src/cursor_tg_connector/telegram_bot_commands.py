@@ -3,6 +3,8 @@ from __future__ import annotations
 from telegram import Update
 from telegram.ext import ContextTypes
 
+from cursor_tg_connector.cursor_api_client import CursorApiError
+from cursor_tg_connector.services_agent_service import AgentStopError
 from cursor_tg_connector.services_create_agent_service import CreateAgentError
 from cursor_tg_connector.telegram_bot_common import (
     BOT_COMMANDS,
@@ -21,10 +23,17 @@ _HELP_TEXT = (
     "\n"
     "Usage:\n"
     "• Send /agents to see running agents and switch the active one.\n"
+    "• Send /stop to stop the currently selected running agent.\n"
     "• Send /newagent to create a new agent (model → repo → branch → prompt).\n"
     "• Send any text message to follow up with the active agent.\n"
     "• Unread messages from the active agent are delivered automatically.\n"
     "• Non-active agents show unread counts; use /agents to switch."
+)
+
+_STOP_HELP_TEXT = (
+    "No active agent selected.\n"
+    "\n"
+    "Use /agents to pick a running agent, then send /stop to stop it."
 )
 
 
@@ -76,6 +85,26 @@ async def clear_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     await update.effective_message.reply_text(
         f"Cleared all unread messages for {agent_name}."
     )
+
+
+async def stop_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not await _authorize_and_record_chat(update, context):
+        return
+
+    services = get_services(context)
+    try:
+        agent = await services.agent_service.stop_active_agent(
+            services.settings.telegram_allowed_user_id,
+        )
+    except (AgentStopError, CursorApiError) as exc:
+        await update.effective_message.reply_text(str(exc))
+        return
+
+    if agent is None:
+        await update.effective_message.reply_text(_STOP_HELP_TEXT)
+        return
+
+    await update.effective_message.reply_text(f"Stopped {agent.name or agent.id}.")
 
 
 async def agents_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

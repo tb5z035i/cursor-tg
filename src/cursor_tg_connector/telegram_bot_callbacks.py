@@ -5,6 +5,12 @@ from telegram.ext import ContextTypes
 
 from cursor_tg_connector.services_create_agent_service import CreateAgentError
 from cursor_tg_connector.telegram_bot_common import (
+    get_services,
+    render_branch_keyboard,
+    render_model_keyboard,
+    render_repository_keyboard,
+)
+from cursor_tg_connector.telegram_bot_constants import (
     BRANCH_PAGE_PREFIX,
     BRANCH_SELECT_PREFIX,
     MODEL_PAGE_PREFIX,
@@ -12,10 +18,6 @@ from cursor_tg_connector.telegram_bot_common import (
     REPO_PAGE_PREFIX,
     REPO_SELECT_PREFIX,
     SWITCH_AGENT_PREFIX,
-    get_services,
-    render_branch_keyboard,
-    render_model_keyboard,
-    render_repository_keyboard,
 )
 
 

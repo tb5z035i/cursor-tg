@@ -83,6 +83,9 @@ The SQLite database defaults to `/data/connector.db`. Mount `/data` to persisten
 |---|---|
 | `/current` | Show info about the active agent (name, status, repo, branches, PR link) |
 | `/agents` | List running and finished agents; tap one to switch and deliver its unread messages |
+| `/focus` | Show clickable agent options to choose the active agent |
+| `/configure_unread` | Configure how unread messages from unselected agents are shown: `full`, `count`, or `none` |
+| `/unfocus` | Clear the currently selected active agent |
 | `/stop` | Stop the currently selected running agent and clear the active selection |
 | `/clear` | Mark all unread messages as read for the active agent |
 | `/newagent` | Create a new agent with a 4-step wizard (model → repo → branch → prompt) |
@@ -95,11 +98,15 @@ Any other text message is forwarded as a follow-up to the active agent.
 
 - The service polls the Cursor API every 10 seconds (configurable) for running agents.
 - **Active agent**: unread assistant messages are delivered as Telegram messages with Markdown rendering, up to 10 per poll cycle.
-- **Other agents**: a summary notice is sent when new unread messages appear (e.g. "3 unread message(s)").
-- When you switch agents via `/agents`, unread messages are delivered immediately.
+- **Other agents**: unread behavior is configurable with `/configure_unread`:
+  - `count` (default) sends a summary notice when new unread messages appear, with a button to switch to that agent.
+  - `full` delivers unread assistant messages in full, like the active agent, with a switch button on the first message in the batch.
+  - `none` suppresses notifications until you switch to that agent.
+- Use `/focus` for a button-only active-agent picker, or `/agents` for a summarized agent list plus the same switch buttons.
+- When you switch agents via `/focus`, `/agents`, or a notice button, unread messages are delivered immediately.
 - Messages from Cursor agents are converted from Markdown to Telegram HTML (bold, italic, code blocks, blockquotes, lists).
 - Follow-up messages you send are forwarded to the Cursor agent; the service polls for a response for up to 3 minutes.
-- All state (active agent, delivery cursors, wizard progress) is stored in a local SQLite database.
+- All state (active agent, unread display preference, delivery cursors, wizard progress) is stored in a local SQLite database.
 
 ## Configuration reference
 

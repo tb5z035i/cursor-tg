@@ -67,7 +67,7 @@ class AgentService:
         agent = await self.cursor_client.get_agent(session.active_agent_id)
         if agent.status != "RUNNING":
             raise AgentStopError(
-                f"{agent.name or agent.id} is not running. Use /agents to select a running agent."
+                f"{agent.name or agent.id} is not running. Use /focus to select a running agent."
             )
 
         await self.cursor_client.stop_agent(agent.id)

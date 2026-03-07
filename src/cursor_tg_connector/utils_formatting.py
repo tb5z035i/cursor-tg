@@ -69,7 +69,7 @@ def build_agent_label(agent: Agent, unread_count: int) -> str:
 def build_agent_notice(agent: Agent, unread_count: int) -> str:
     return (
         f"> **{agent.name or agent.id}**\n"
-        f"{unread_count} unread message(s). Use /agents to switch."
+        f"{unread_count} unread message(s). Tap below or use /focus to switch."
     )
 
 

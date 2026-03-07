@@ -75,7 +75,7 @@ async def test_stop_command_shows_help_when_no_active_agent(settings, state_repo
     assert message.replies == [
         (
             "No active agent selected.\n\n"
-            "Use /agents to pick a running agent, then send /stop to stop it."
+            "Use /focus to pick a running agent, then send /stop to stop it."
         )
     ]
 

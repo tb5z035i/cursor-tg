@@ -10,7 +10,10 @@ from cursor_tg_connector.telegram_bot_common import (
     render_agent_keyboard,
     render_model_keyboard,
 )
-from cursor_tg_connector.utils_formatting import build_agent_info_message, format_command_list
+from cursor_tg_connector.utils_formatting import (
+    build_agent_info_message,
+    build_agents_summary_message,
+)
 
 _HELP_TEXT = (
     "Cursor Telegram connector — manage Cursor Cloud agents from Telegram.\n"
@@ -99,11 +102,12 @@ async def agents_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             for item in items
         ]
     )
-    summary = format_command_list(
-        "Agents",
-        [item.label for item in items],
+    summary = build_agents_summary_message(items)
+    await update.effective_message.reply_text(
+        summary,
+        reply_markup=keyboard,
+        parse_mode="HTML",
     )
-    await update.effective_message.reply_text(summary, reply_markup=keyboard)
 
 
 async def new_agent_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

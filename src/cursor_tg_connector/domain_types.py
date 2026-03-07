@@ -33,6 +33,10 @@ class AgentUnreadState:
 @dataclass(slots=True)
 class AgentListItem:
     agent_id: str
+    name: str
+    status: str
+    repository: str
+    branch: str
     label: str
     unread_count: int
     is_active: bool

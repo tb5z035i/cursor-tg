@@ -45,6 +45,18 @@ CURSOR_API_KEY=cur_...
 
 All other settings have sensible defaults. See [Configuration reference](#configuration-reference) for details.
 
+By default the service reads `.env` from the working directory. To load from a different path (useful for container deployments), use either:
+
+```bash
+# CLI argument
+python -m cursor_tg_connector --env-file /path/to/secrets.env
+
+# or environment variable
+ENV_FILE=/path/to/secrets.env python -m cursor_tg_connector
+```
+
+Environment variables always take precedence over values in the env file.
+
 ### 5. Run
 
 **Local:**
@@ -122,6 +134,8 @@ ruff check .
 
 ## Docker deployment
 
+**Option A — pass env vars directly (works with `docker run` and ECI):**
+
 ```bash
 docker build -t cursor-tg-connector .
 docker run -d \
@@ -129,6 +143,18 @@ docker run -d \
   --restart unless-stopped \
   --env-file .env \
   -v /path/to/persistent/data:/data \
+  cursor-tg-connector
+```
+
+**Option B — mount an env file inside the container (useful for ECI / Kubernetes):**
+
+```bash
+docker run -d \
+  --name cursor-tg \
+  --restart unless-stopped \
+  -v /path/to/persistent/data:/data \
+  -v /path/to/secrets.env:/data/.env:ro \
+  -e ENV_FILE=/data/.env \
   cursor-tg-connector
 ```
 

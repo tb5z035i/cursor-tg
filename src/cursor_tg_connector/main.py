@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import argparse
 import asyncio
 import logging
+import os
 import signal
 
 from cursor_tg_connector.config import Settings
@@ -19,8 +21,16 @@ from cursor_tg_connector.utils_logging import configure_logging
 logger = logging.getLogger(__name__)
 
 
+def _resolve_env_file() -> str | None:
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument("--env-file", default=None)
+    args, _ = parser.parse_known_args()
+    return args.env_file or os.environ.get("ENV_FILE")
+
+
 async def run() -> None:
-    settings = Settings()
+    env_file = _resolve_env_file()
+    settings = Settings(_env_file=env_file) if env_file else Settings()
     configure_logging(settings.log_level)
 
     database = Database(settings.sqlite_path)

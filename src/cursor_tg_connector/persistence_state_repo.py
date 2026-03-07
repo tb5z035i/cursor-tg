@@ -4,7 +4,7 @@ import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from cursor_tg_connector.domain_types import SessionState, WizardStep
+from cursor_tg_connector.domain_types import AgentThreadBinding, SessionState, WizardStep
 from cursor_tg_connector.persistence_db import Database
 
 
@@ -37,6 +37,7 @@ class StateRepository:
             telegram_user_id=row["telegram_user_id"],
             telegram_chat_id=row["telegram_chat_id"],
             active_agent_id=row["active_agent_id"],
+            thread_mode_enabled=bool(row["thread_mode_enabled"]),
             wizard_state=WizardStep(row["wizard_state"]),
             wizard_payload=json.loads(row["wizard_payload_json"] or "{}"),
             last_create_agent_at=row["last_create_agent_at"],
@@ -55,16 +56,18 @@ class StateRepository:
                     telegram_user_id,
                     telegram_chat_id,
                     active_agent_id,
+                    thread_mode_enabled,
                     wizard_state,
                     wizard_payload_json,
                     last_create_agent_at,
                     created_at,
                     updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(telegram_user_id) DO UPDATE SET
                     telegram_chat_id = excluded.telegram_chat_id,
                     active_agent_id = excluded.active_agent_id,
+                    thread_mode_enabled = excluded.thread_mode_enabled,
                     wizard_state = excluded.wizard_state,
                     wizard_payload_json = excluded.wizard_payload_json,
                     last_create_agent_at = excluded.last_create_agent_at,
@@ -74,6 +77,7 @@ class StateRepository:
                     session.telegram_user_id,
                     session.telegram_chat_id,
                     session.active_agent_id,
+                    int(session.thread_mode_enabled),
                     session.wizard_state.value,
                     json.dumps(session.wizard_payload),
                     session.last_create_agent_at,
@@ -94,6 +98,18 @@ class StateRepository:
     async def set_active_agent(self, telegram_user_id: int, agent_id: str | None) -> SessionState:
         session = await self.get_session(telegram_user_id)
         session.active_agent_id = agent_id
+        await self.upsert_session(session)
+        return session
+
+    async def set_thread_mode_enabled(
+        self,
+        telegram_user_id: int,
+        enabled: bool,
+    ) -> SessionState:
+        session = await self.get_session(telegram_user_id)
+        session.thread_mode_enabled = enabled
+        if enabled:
+            session.active_agent_id = None
         await self.upsert_session(session)
         return session
 
@@ -207,6 +223,80 @@ class StateRepository:
             await db.execute(
                 "DELETE FROM agent_notice_state WHERE agent_id = ?",
                 (agent_id,),
+            )
+            await db.commit()
+        finally:
+            await db.close()
+
+    async def get_agent_thread_binding(self, agent_id: str) -> AgentThreadBinding | None:
+        db = await self.database.connect()
+        try:
+            cursor = await db.execute(
+                "SELECT * FROM agent_thread_binding WHERE agent_id = ?",
+                (agent_id,),
+            )
+            row = await cursor.fetchone()
+        finally:
+            await db.close()
+        if row is None:
+            return None
+        return AgentThreadBinding(
+            agent_id=row["agent_id"],
+            telegram_chat_id=row["telegram_chat_id"],
+            message_thread_id=row["message_thread_id"],
+        )
+
+    async def get_thread_binding(
+        self,
+        chat_id: int,
+        message_thread_id: int,
+    ) -> AgentThreadBinding | None:
+        db = await self.database.connect()
+        try:
+            cursor = await db.execute(
+                """
+                SELECT * FROM agent_thread_binding
+                WHERE telegram_chat_id = ? AND message_thread_id = ?
+                """,
+                (chat_id, message_thread_id),
+            )
+            row = await cursor.fetchone()
+        finally:
+            await db.close()
+        if row is None:
+            return None
+        return AgentThreadBinding(
+            agent_id=row["agent_id"],
+            telegram_chat_id=row["telegram_chat_id"],
+            message_thread_id=row["message_thread_id"],
+        )
+
+    async def upsert_agent_thread_binding(self, binding: AgentThreadBinding) -> None:
+        now = _utcnow()
+        db = await self.database.connect()
+        try:
+            await db.execute(
+                """
+                INSERT INTO agent_thread_binding (
+                    agent_id,
+                    telegram_chat_id,
+                    message_thread_id,
+                    created_at,
+                    updated_at
+                )
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(agent_id) DO UPDATE SET
+                    telegram_chat_id = excluded.telegram_chat_id,
+                    message_thread_id = excluded.message_thread_id,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    binding.agent_id,
+                    binding.telegram_chat_id,
+                    binding.message_thread_id,
+                    now,
+                    now,
+                ),
             )
             await db.commit()
         finally:

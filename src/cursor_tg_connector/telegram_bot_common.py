@@ -6,6 +6,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 
 from cursor_tg_connector.config import Settings
+from cursor_tg_connector.persistence_db import Database
 from cursor_tg_connector.services_agent_service import AgentService
 from cursor_tg_connector.services_create_agent_service import CreateAgentService, RepositoryPage
 from cursor_tg_connector.services_followup_service import FollowupService
@@ -18,15 +19,19 @@ REPO_SELECT_PREFIX = "wizard:repo:"
 REPO_PAGE_PREFIX = "wizard:repo_page:"
 BRANCH_SELECT_PREFIX = "wizard:branch:"
 BRANCH_PAGE_PREFIX = "wizard:branch_page:"
+RESET_DB_CONFIRM_PREFIX = "resetdb:confirm"
+RESET_DB_CANCEL_PREFIX = "resetdb:cancel"
 
 BOT_COMMANDS: list[tuple[str, str]] = [
     ("current", "Show info about the current active agent"),
-    ("agents", "List agents and switch the active one"),
+    ("agents", "List agents and open their chat thread"),
     ("unfocus", "Clear the active agent selection"),
     ("stop", "Stop the current running active agent"),
     ("clear", "Mark all unread messages as read for the active agent"),
+    ("threadmode", "Toggle per-agent Telegram thread routing"),
     ("newagent", "Create a new Cursor cloud agent"),
     ("cancel", "Cancel an in-progress create-agent wizard"),
+    ("resetdb", "Reset local SQLite state after confirmation"),
     ("help", "Show available commands and usage"),
 ]
 
@@ -34,6 +39,7 @@ BOT_COMMANDS: list[tuple[str, str]] = [
 @dataclass(slots=True)
 class AppServices:
     settings: Settings
+    database: Database
     agent_service: AgentService
     create_agent_service: CreateAgentService
     followup_service: FollowupService
@@ -107,6 +113,27 @@ def render_agent_keyboard(items: list[tuple[str, str]]) -> InlineKeyboardMarkup:
         for agent_id, label in items
     ]
     return InlineKeyboardMarkup(rows)
+
+
+def render_reset_db_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton("✅ Reset DB", callback_data=RESET_DB_CONFIRM_PREFIX),
+                InlineKeyboardButton("Cancel", callback_data=RESET_DB_CANCEL_PREFIX),
+            ]
+        ]
+    )
+
+
+def get_message_thread_id(update: Update) -> int | None:
+    effective_message = getattr(update, "effective_message", None)
+    if effective_message and effective_message.message_thread_id is not None:
+        return update.effective_message.message_thread_id
+    callback_query = getattr(update, "callback_query", None)
+    if callback_query and callback_query.message:
+        return callback_query.message.message_thread_id
+    return None
 
 
 def _pagination_rows(page: int, total_pages: int, prefix: str) -> list[list[InlineKeyboardButton]]:

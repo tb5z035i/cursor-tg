@@ -5,16 +5,26 @@ from types import SimpleNamespace
 import pytest
 
 from cursor_tg_connector.cursor_api_models import Agent, AgentConversation
+from cursor_tg_connector.domain_types import AgentThreadBinding
 from cursor_tg_connector.services_agent_service import AgentService
-from cursor_tg_connector.telegram_bot_commands import stop_command
+from cursor_tg_connector.telegram_bot_commands import (
+    new_agent_command,
+    resetdb_command,
+    stop_command,
+    threadmode_command,
+)
+from cursor_tg_connector.utils_formatting import build_reset_db_prompt
 
 
 class FakeMessage:
     def __init__(self) -> None:
         self.replies: list[str] = []
+        self.reply_markups: list[object | None] = []
+        self.message_thread_id: int | None = None
 
     async def reply_text(self, text: str, **_: object) -> None:
         self.replies.append(text)
+        self.reply_markups.append(_.get("reply_markup"))
 
 
 class FakeCursorClient:
@@ -47,14 +57,37 @@ class FakeCursorClient:
         return [self.agent]
 
 
-def build_context(*, settings, state_repo, agent_service: AgentService) -> SimpleNamespace:
+class FakeCreateAgentService:
+    def __init__(self, state_repo) -> None:
+        self.state_repo = state_repo
+        self.started: list[tuple[int, int]] = []
+
+    async def start_wizard(self, telegram_user_id: int, chat_id: int) -> None:
+        self.started.append((telegram_user_id, chat_id))
+
+    async def get_model_page(self, telegram_user_id: int, page: int):
+        return SimpleNamespace(repositories=["gpt-5"], page=page, total_pages=1)
+
+    async def cancel(self, telegram_user_id: int) -> bool:
+        return False
+
+
+def build_context(
+    *,
+    settings,
+    state_repo,
+    agent_service: AgentService,
+    create_agent_service: FakeCreateAgentService | None = None,
+    args: list[str] | None = None,
+) -> SimpleNamespace:
     services = SimpleNamespace(
         settings=settings,
+        database=state_repo.database,
         agent_service=agent_service,
-        create_agent_service=SimpleNamespace(state_repo=state_repo),
+        create_agent_service=create_agent_service or FakeCreateAgentService(state_repo),
     )
     application = SimpleNamespace(bot_data={"services": services})
-    return SimpleNamespace(application=application)
+    return SimpleNamespace(application=application, args=args or [])
 
 
 @pytest.mark.asyncio
@@ -102,3 +135,112 @@ async def test_stop_command_stops_selected_agent(settings, state_repo) -> None:
     assert message.replies == ["Stopped Agent One."]
     assert client.stopped_agent_ids == ["agent-1"]
     assert session.active_agent_id is None
+
+
+@pytest.mark.asyncio
+async def test_threadmode_command_toggles_session_flag(settings, state_repo) -> None:
+    message = FakeMessage()
+    update = SimpleNamespace(
+        effective_user=SimpleNamespace(id=settings.telegram_allowed_user_id),
+        effective_message=message,
+        effective_chat=SimpleNamespace(id=999),
+    )
+    agent_service = AgentService(FakeCursorClient(), state_repo)
+
+    await threadmode_command(
+        update,
+        build_context(
+            settings=settings,
+            state_repo=state_repo,
+            agent_service=agent_service,
+            args=["on"],
+        ),
+    )
+
+    session = await state_repo.get_session(settings.telegram_allowed_user_id)
+    assert session.thread_mode_enabled is True
+    assert "Thread mode is enabled." in message.replies[-1]
+
+
+@pytest.mark.asyncio
+async def test_resetdb_command_shows_confirmation_keyboard(settings, state_repo) -> None:
+    message = FakeMessage()
+    update = SimpleNamespace(
+        effective_user=SimpleNamespace(id=settings.telegram_allowed_user_id),
+        effective_message=message,
+        effective_chat=SimpleNamespace(id=999),
+    )
+    agent_service = AgentService(FakeCursorClient(), state_repo)
+
+    await resetdb_command(
+        update,
+        build_context(settings=settings, state_repo=state_repo, agent_service=agent_service),
+    )
+
+    assert message.replies == [build_reset_db_prompt()]
+    assert message.reply_markups[0] is not None
+
+
+@pytest.mark.asyncio
+async def test_stop_command_in_thread_mode_outside_thread_shows_guidance(
+    settings,
+    state_repo,
+) -> None:
+    message = FakeMessage()
+    update = SimpleNamespace(
+        effective_user=SimpleNamespace(id=settings.telegram_allowed_user_id),
+        effective_message=message,
+        effective_chat=SimpleNamespace(id=999),
+    )
+    session = await state_repo.get_session(settings.telegram_allowed_user_id)
+    session.thread_mode_enabled = True
+    await state_repo.upsert_session(session)
+    agent_service = AgentService(FakeCursorClient(), state_repo)
+
+    await stop_command(
+        update,
+        build_context(settings=settings, state_repo=state_repo, agent_service=agent_service),
+    )
+
+    assert message.replies == [
+        (
+            "This command only works inside a bound agent thread while thread mode is enabled. "
+            "Use /agents in the root chat to create or open the correct thread."
+        )
+    ]
+
+
+@pytest.mark.asyncio
+async def test_newagent_command_rejects_bound_thread_in_thread_mode(settings, state_repo) -> None:
+    message = FakeMessage()
+    message.message_thread_id = 77
+    update = SimpleNamespace(
+        effective_user=SimpleNamespace(id=settings.telegram_allowed_user_id),
+        effective_message=message,
+        effective_chat=SimpleNamespace(id=999),
+    )
+    session = await state_repo.get_session(settings.telegram_allowed_user_id)
+    session.thread_mode_enabled = True
+    await state_repo.upsert_session(session)
+    await state_repo.upsert_agent_thread_binding(
+        AgentThreadBinding(
+            agent_id="agent-1",
+            telegram_chat_id=999,
+            message_thread_id=77,
+        )
+    )
+    agent_service = AgentService(FakeCursorClient(), state_repo)
+    create_agent_service = FakeCreateAgentService(state_repo)
+
+    await new_agent_command(
+        update,
+        build_context(
+            settings=settings,
+            state_repo=state_repo,
+            agent_service=agent_service,
+            create_agent_service=create_agent_service,
+        ),
+    )
+
+    assert message.replies == ["Run /newagent from the root chat, not from inside an agent thread."]
+    assert create_agent_service.started == []

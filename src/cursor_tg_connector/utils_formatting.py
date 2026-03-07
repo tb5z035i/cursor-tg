@@ -66,15 +66,23 @@ def build_agent_label(agent: Agent, unread_count: int) -> str:
     return " · ".join(parts)
 
 
-def build_agent_notice(agent: Agent, unread_count: int) -> str:
+def build_agent_notice(agent: Agent, unread_count: int, *, threaded: bool = False) -> str:
+    action = "create or open its thread" if threaded else "switch"
     return (
         f"> **{agent.name or agent.id}**\n"
-        f"{unread_count} unread message(s). Use /agents to switch."
+        f"{unread_count} unread message(s). Use /agents to {action}."
     )
 
 
 def build_active_agent_message(agent: Agent, text: str) -> str:
     return f"> **{agent.name or agent.id}**\n{text}".strip()
+
+
+def build_agent_thread_name(agent: Agent) -> str:
+    repo_name = shorten_repository_name(agent.source.repository).split("/")[-1]
+    branch = (agent.source.ref or "unknown")[:32]
+    title = f"{agent.name or agent.id} · {repo_name} · {branch}"
+    return title[:128]
 
 
 def build_agent_info_message(agent: Agent) -> str:
@@ -105,6 +113,55 @@ def build_agent_created_message(agent: Agent) -> str:
         f"Working branch: {target_branch}\n"
         f"Status: {agent.status}"
     )
+
+
+def build_thread_mode_status(enabled: bool) -> str:
+    status = "enabled" if enabled else "disabled"
+    next_step = (
+        "Use /agents in the root chat to create or open an agent thread."
+        if enabled
+        else "The bot will use the legacy single-active-agent chat flow."
+    )
+    return f"Thread mode is {status}.\n\n{next_step}"
+
+
+def build_thread_mode_guidance() -> str:
+    return (
+        "Thread mode is on. Use /agents in the root chat to create or open an agent thread, "
+        "then continue the conversation there."
+    )
+
+
+def build_thread_command_guidance() -> str:
+    return (
+        "This command only works inside a bound agent thread while thread mode is enabled. "
+        "Use /agents in the root chat to create or open the correct thread."
+    )
+
+
+def build_thread_opened_message(agent: Agent, created: bool) -> str:
+    action = "Created" if created else "Opened"
+    return f"{action} thread for {agent.name or agent.id}. Continue in that thread."
+
+
+def build_thread_ready_message(agent: Agent) -> str:
+    return f"Thread ready for **{agent.name or agent.id}**. Send follow-ups here."
+
+
+def build_reset_db_prompt() -> str:
+    return (
+        "Reset the local SQLite state?\n\n"
+        "This clears session state, thread bindings, unread notices, delivery "
+        "cursors, and any in-progress wizard."
+    )
+
+
+def build_reset_db_success() -> str:
+    return "Local DB state reset and reinitialized."
+
+
+def build_reset_db_cancelled() -> str:
+    return "DB reset cancelled. No changes were made."
 
 
 def build_repository_label(repository: Repository) -> str:

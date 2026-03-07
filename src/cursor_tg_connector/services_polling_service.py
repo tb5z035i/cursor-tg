@@ -57,12 +57,19 @@ class PollingService:
             for snapshot in snapshots:
                 if snapshot.agent.id in self.active_followups:
                     continue
+                if session.thread_mode_enabled:
+                    await self._handle_thread_mode_snapshot(snapshot, notifier, chat_id)
+                    continue
                 if snapshot.agent.id == active_agent_id:
                     await self._handle_active_snapshot(snapshot, notifier, chat_id)
                 else:
                     await self._handle_inactive_snapshot(snapshot, notifier, chat_id)
 
-            if active_agent_id and active_agent_id not in self.active_followups:
+            if (
+                not session.thread_mode_enabled
+                and active_agent_id
+                and active_agent_id not in self.active_followups
+            ):
                 active = next(
                     (s for s in snapshots if s.agent.id == active_agent_id), None
                 )
@@ -94,6 +101,7 @@ class PollingService:
         snapshot: AgentConversationSnapshot,
         notifier,
         chat_id: int,
+        threaded: bool = False,
     ) -> None:
         if not snapshot.unread_messages:
             await self.state_repo.clear_notice_state(snapshot.agent.id)
@@ -104,12 +112,38 @@ class PollingService:
         if notice_state.last_notified_unread_count == unread_count:
             return
 
-        await notifier.send_text(chat_id, build_agent_notice(snapshot.agent, unread_count))
+        await notifier.send_text(
+            chat_id,
+            build_agent_notice(snapshot.agent, unread_count, threaded=threaded),
+        )
         await self.state_repo.update_notice_state(
             snapshot.agent.id,
             unread_count,
             None,
         )
+
+    async def _handle_thread_mode_snapshot(
+        self,
+        snapshot: AgentConversationSnapshot,
+        notifier,
+        root_chat_id: int,
+    ) -> None:
+        binding = await self.state_repo.get_agent_thread_binding(snapshot.agent.id)
+        if binding is not None:
+            cursor = snapshot.delivered_count
+            for message in snapshot.unread_messages[:10]:
+                await notifier.send_text(
+                    binding.telegram_chat_id,
+                    build_active_agent_message(snapshot.agent, message.text),
+                    message_thread_id=binding.message_thread_id,
+                )
+                cursor += 1
+                await self.state_repo.set_delivery_cursor(snapshot.agent.id, cursor)
+            if not snapshot.unread_messages:
+                await self.state_repo.clear_notice_state(snapshot.agent.id)
+            return
+
+        await self._handle_inactive_snapshot(snapshot, notifier, root_chat_id, threaded=True)
 
     async def _clear_stale_notice_states(self, seen_agent_ids: set[str]) -> None:
         session = await self.state_repo.get_session(self.settings.telegram_allowed_user_id)

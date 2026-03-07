@@ -4,6 +4,7 @@ import asyncio
 
 from cursor_tg_connector.config import Settings
 from cursor_tg_connector.cursor_api_client import CursorApiClient
+from cursor_tg_connector.cursor_api_models import PromptImage
 from cursor_tg_connector.persistence_state_repo import StateRepository
 from cursor_tg_connector.services_agent_service import AgentService
 from cursor_tg_connector.utils_formatting import build_active_agent_message
@@ -21,11 +22,15 @@ class FollowupService:
         cursor_client: CursorApiClient,
         state_repo: StateRepository,
         agent_service: AgentService,
+        active_followups: set[str] | None = None,
     ) -> None:
         self.settings = settings
         self.cursor_client = cursor_client
         self.state_repo = state_repo
         self.agent_service = agent_service
+        self.active_followups: set[str] = (
+            active_followups if active_followups is not None else set()
+        )
 
     async def send_followup(
         self,
@@ -33,6 +38,7 @@ class FollowupService:
         chat_id: int,
         text: str,
         notifier,
+        images: list[PromptImage] | None = None,
     ) -> int:
         text = text.strip()
         if not text:
@@ -42,38 +48,38 @@ class FollowupService:
         if not session.active_agent_id:
             raise FollowupError("No active agent selected. Use /agents first.")
 
-        await self.agent_service.deliver_active_agent_unread(
-            agent_id=session.active_agent_id,
-            notifier=notifier,
-            chat_id=chat_id,
-            limit=10,
-        )
-
-        before = await self.cursor_client.get_conversation(session.active_agent_id)
-        existing_ids = {message.id for message in before.messages}
-        await self.cursor_client.add_followup(session.active_agent_id, text)
-
-        deadline = asyncio.get_running_loop().time() + self.settings.followup_poll_timeout_seconds
-        while asyncio.get_running_loop().time() < deadline:
-            await asyncio.sleep(self.settings.followup_poll_interval_seconds)
-            snapshot = await self.agent_service.get_unread_snapshot(session.active_agent_id)
-            new_messages = [
-                message
-                for message in snapshot.unread_messages
-                if message.id not in existing_ids
-            ]
-            if not new_messages:
-                continue
-
-            for message in new_messages[:10]:
-                await notifier.send_text(
-                    chat_id,
-                    build_active_agent_message(snapshot.agent, message.text),
-                )
-            await self.state_repo.mark_messages_delivered(
-                session.active_agent_id,
-                [message.id for message in new_messages[:10]],
+        agent_id = session.active_agent_id
+        self.active_followups.add(agent_id)
+        try:
+            await self.agent_service.deliver_active_agent_unread(
+                agent_id=agent_id,
+                notifier=notifier,
+                chat_id=chat_id,
+                limit=10,
             )
-            return len(new_messages[:10])
 
-        return 0
+            await self.cursor_client.add_followup(agent_id, text, images=images)
+
+            timeout = self.settings.followup_poll_timeout_seconds
+            deadline = asyncio.get_running_loop().time() + timeout
+            while asyncio.get_running_loop().time() < deadline:
+                await asyncio.sleep(self.settings.followup_poll_interval_seconds)
+                await notifier.send_typing(chat_id)
+                snapshot = await self.agent_service.get_unread_snapshot(agent_id)
+                if not snapshot.unread_messages:
+                    continue
+
+                cursor = snapshot.delivered_count
+                delivered = snapshot.unread_messages[:10]
+                for message in delivered:
+                    await notifier.send_text(
+                        chat_id,
+                        build_active_agent_message(snapshot.agent, message.text),
+                    )
+                    cursor += 1
+                    await self.state_repo.set_delivery_cursor(agent_id, cursor)
+                return len(delivered)
+
+            return 0
+        finally:
+            self.active_followups.discard(agent_id)

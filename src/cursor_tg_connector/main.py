@@ -38,16 +38,19 @@ async def run() -> None:
 
     agent_service = AgentService(cursor_client, state_repo)
     create_agent_service = CreateAgentService(cursor_client, state_repo)
+    active_followups: set[str] = set()
     followup_service = FollowupService(
         settings=settings,
         cursor_client=cursor_client,
         state_repo=state_repo,
         agent_service=agent_service,
+        active_followups=active_followups,
     )
     polling_service = PollingService(
         settings=settings,
         state_repo=state_repo,
         agent_service=agent_service,
+        active_followups=active_followups,
     )
     app_services = AppServices(
         settings=settings,

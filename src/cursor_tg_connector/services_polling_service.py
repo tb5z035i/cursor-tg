@@ -21,10 +21,14 @@ class PollingService:
         settings: Settings,
         state_repo: StateRepository,
         agent_service: AgentService,
+        active_followups: set[str] | None = None,
     ) -> None:
         self.settings = settings
         self.state_repo = state_repo
         self.agent_service = agent_service
+        self.active_followups: set[str] = (
+            active_followups if active_followups is not None else set()
+        )
         self._lock = asyncio.Lock()
 
     async def poll_once(self, notifier) -> None:
@@ -44,10 +48,19 @@ class PollingService:
             seen_agent_ids = {snapshot.agent.id for snapshot in snapshots}
 
             for snapshot in snapshots:
+                if snapshot.agent.id in self.active_followups:
+                    continue
                 if snapshot.agent.id == active_agent_id:
                     await self._handle_active_snapshot(snapshot, notifier, chat_id)
                 else:
                     await self._handle_inactive_snapshot(snapshot, notifier, chat_id)
+
+            if active_agent_id and active_agent_id not in self.active_followups:
+                active = next(
+                    (s for s in snapshots if s.agent.id == active_agent_id), None
+                )
+                if active and active.agent.status == "RUNNING":
+                    await notifier.send_typing(chat_id)
 
             await self._clear_stale_notice_states(seen_agent_ids)
 
@@ -57,17 +70,15 @@ class PollingService:
         notifier,
         chat_id: int,
     ) -> None:
-        unread_messages = snapshot.unread_messages[:10]
-        for message in unread_messages:
+        cursor = snapshot.delivered_count
+        for message in snapshot.unread_messages[:10]:
             await notifier.send_text(
                 chat_id,
                 build_active_agent_message(snapshot.agent, message.text),
             )
+            cursor += 1
+            await self.state_repo.set_delivery_cursor(snapshot.agent.id, cursor)
 
-        await self.state_repo.mark_messages_delivered(
-            snapshot.agent.id,
-            [message.id for message in unread_messages],
-        )
         if not snapshot.unread_messages:
             await self.state_repo.clear_notice_state(snapshot.agent.id)
 
@@ -83,18 +94,14 @@ class PollingService:
 
         notice_state = await self.state_repo.get_notice_state(snapshot.agent.id)
         unread_count = len(snapshot.unread_messages)
-        newest_message_id = snapshot.unread_messages[-1].id
-        if (
-            notice_state.last_notified_unread_count == unread_count
-            and notice_state.last_notified_message_id == newest_message_id
-        ):
+        if notice_state.last_notified_unread_count == unread_count:
             return
 
         await notifier.send_text(chat_id, build_agent_notice(snapshot.agent, unread_count))
         await self.state_repo.update_notice_state(
             snapshot.agent.id,
             unread_count,
-            newest_message_id,
+            None,
         )
 
     async def _clear_stale_notice_states(self, seen_agent_ids: set[str]) -> None:

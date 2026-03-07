@@ -118,47 +118,6 @@ class StateRepository:
         await self.upsert_session(session)
         return session
 
-    async def get_delivered_message_ids(
-        self,
-        agent_id: str,
-        message_ids: list[str],
-    ) -> set[str]:
-        if not message_ids:
-            return set()
-
-        placeholders = ",".join("?" for _ in message_ids)
-        db = await self.database.connect()
-        try:
-            rows = await db.execute_fetchall(
-                f"""
-                SELECT message_id
-                FROM agent_message_delivery
-                WHERE agent_id = ? AND message_id IN ({placeholders})
-                """,
-                (agent_id, *message_ids),
-            )
-        finally:
-            await db.close()
-        return {row["message_id"] for row in rows}
-
-    async def mark_messages_delivered(self, agent_id: str, message_ids: list[str]) -> None:
-        if not message_ids:
-            return
-
-        now = _utcnow()
-        db = await self.database.connect()
-        try:
-            await db.executemany(
-                """
-                INSERT OR IGNORE INTO agent_message_delivery (agent_id, message_id, delivered_at)
-                VALUES (?, ?, ?)
-                """,
-                [(agent_id, message_id, now) for message_id in message_ids],
-            )
-            await db.commit()
-        finally:
-            await db.close()
-
     async def get_notice_state(self, agent_id: str) -> NoticeState:
         db = await self.database.connect()
         try:
@@ -207,6 +166,36 @@ class StateRepository:
                     updated_at = excluded.updated_at
                 """,
                 (agent_id, unread_count, last_message_id, now),
+            )
+            await db.commit()
+        finally:
+            await db.close()
+
+    async def get_delivery_cursor(self, agent_id: str) -> int | None:
+        db = await self.database.connect()
+        try:
+            cursor = await db.execute(
+                "SELECT delivered_count FROM agent_delivery_cursor WHERE agent_id = ?",
+                (agent_id,),
+            )
+            row = await cursor.fetchone()
+        finally:
+            await db.close()
+        return row["delivered_count"] if row else None
+
+    async def set_delivery_cursor(self, agent_id: str, count: int) -> None:
+        now = _utcnow()
+        db = await self.database.connect()
+        try:
+            await db.execute(
+                """
+                INSERT INTO agent_delivery_cursor (agent_id, delivered_count, updated_at)
+                VALUES (?, ?, ?)
+                ON CONFLICT(agent_id) DO UPDATE SET
+                    delivered_count = excluded.delivered_count,
+                    updated_at = excluded.updated_at
+                """,
+                (agent_id, count, now),
             )
             await db.commit()
         finally:

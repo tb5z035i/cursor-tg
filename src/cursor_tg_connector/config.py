@@ -27,7 +27,7 @@ class Settings(BaseSettings):
         alias="CURSOR_API_RETRY_BACKOFF_SECONDS",
     )
     sqlite_path: Path = Field(default=Path("/data/connector.db"), alias="SQLITE_PATH")
-    poll_interval_seconds: float = Field(default=20.0, alias="POLL_INTERVAL_SECONDS")
+    poll_interval_seconds: float = Field(default=10.0, alias="POLL_INTERVAL_SECONDS")
     followup_poll_interval_seconds: float = Field(
         default=5.0,
         alias="FOLLOWUP_POLL_INTERVAL_SECONDS",

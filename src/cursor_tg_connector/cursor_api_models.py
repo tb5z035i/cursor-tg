@@ -5,6 +5,11 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 
+class PromptImage(BaseModel):
+    data: str
+    dimension: dict[str, int] | None = None
+
+
 class AgentSource(BaseModel):
     repository: str
     ref: str | None = None

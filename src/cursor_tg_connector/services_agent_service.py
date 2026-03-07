@@ -14,6 +14,7 @@ from cursor_tg_connector.utils_formatting import build_active_agent_message, bui
 class AgentConversationSnapshot:
     agent: Agent
     unread_messages: list[ConversationMessage]
+    delivered_count: int = 0
 
 
 class AgentService:
@@ -21,14 +22,14 @@ class AgentService:
         self.cursor_client = cursor_client
         self.state_repo = state_repo
 
-    async def list_running_agents_with_unread_counts(
+    async def list_agents_with_unread_counts(
         self,
         telegram_user_id: int,
     ) -> list[AgentListItem]:
         session = await self.state_repo.get_session(telegram_user_id)
-        running_agents = await self._list_running_agents()
+        agents = await self._list_agents({"RUNNING", "FINISHED"})
         snapshots = await asyncio.gather(
-            *(self.get_unread_snapshot(agent.id) for agent in running_agents),
+            *(self.get_unread_snapshot(agent.id) for agent in agents),
         )
 
         items: list[AgentListItem] = []
@@ -42,6 +43,17 @@ class AgentService:
                 )
             )
         return items
+
+    async def clear_unread(self, telegram_user_id: int) -> str | None:
+        session = await self.state_repo.get_session(telegram_user_id)
+        if not session.active_agent_id:
+            return None
+        agent_id = session.active_agent_id
+        conversation = await self.cursor_client.get_conversation(agent_id)
+        total = sum(1 for m in conversation.messages if m.type == "assistant_message")
+        await self.state_repo.set_delivery_cursor(agent_id, total)
+        agent = await self.cursor_client.get_agent(agent_id)
+        return agent.name or agent_id
 
     async def ensure_active_agent_exists(self, telegram_user_id: int) -> Agent | None:
         session = await self.state_repo.get_session(telegram_user_id)
@@ -70,12 +82,14 @@ class AgentService:
     ) -> int:
         snapshot = await self.get_unread_snapshot(agent_id)
         to_send = snapshot.unread_messages[:limit]
+        cursor = snapshot.delivered_count
         for message in to_send:
             await notifier.send_text(
                 chat_id,
                 build_active_agent_message(snapshot.agent, message.text),
             )
-        await self.state_repo.mark_messages_delivered(agent_id, [message.id for message in to_send])
+            cursor += 1
+            await self.state_repo.set_delivery_cursor(agent_id, cursor)
         return len(to_send)
 
     async def get_unread_snapshot(self, agent_id: str) -> AgentConversationSnapshot:
@@ -84,21 +98,27 @@ class AgentService:
         assistant_messages = [
             message for message in conversation.messages if message.type == "assistant_message"
         ]
-        delivered_ids = await self.state_repo.get_delivered_message_ids(
-            agent_id,
-            [message.id for message in assistant_messages],
+        cursor = await self.state_repo.get_delivery_cursor(agent_id)
+        if cursor is None:
+            await self.state_repo.set_delivery_cursor(agent_id, len(assistant_messages))
+            return AgentConversationSnapshot(
+                agent=agent,
+                unread_messages=[],
+                delivered_count=len(assistant_messages),
+            )
+        unread_messages = assistant_messages[cursor:]
+        return AgentConversationSnapshot(
+            agent=agent,
+            unread_messages=unread_messages,
+            delivered_count=cursor,
         )
-        unread_messages = [
-            message for message in assistant_messages if message.id not in delivered_ids
-        ]
-        return AgentConversationSnapshot(agent=agent, unread_messages=unread_messages)
 
     async def list_running_snapshots(self) -> list[AgentConversationSnapshot]:
-        running_agents = await self._list_running_agents()
+        agents = await self._list_agents({"RUNNING"})
         return await asyncio.gather(
-            *(self.get_unread_snapshot(agent.id) for agent in running_agents)
+            *(self.get_unread_snapshot(agent.id) for agent in agents)
         )
 
-    async def _list_running_agents(self) -> list[Agent]:
+    async def _list_agents(self, statuses: set[str]) -> list[Agent]:
         agents = await self.cursor_client.list_agents()
-        return [agent for agent in agents if agent.status == "RUNNING"]
+        return [agent for agent in agents if agent.status in statuses]

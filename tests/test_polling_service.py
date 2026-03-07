@@ -19,6 +19,9 @@ class FakeNotifier:
     async def send_text(self, chat_id: int, text: str) -> None:
         self.messages.append((chat_id, text))
 
+    async def send_typing(self, chat_id: int) -> None:
+        pass
+
 
 class FakeAgentService:
     def __init__(self, poll_batches: list[list[AgentConversationSnapshot]]) -> None:
@@ -95,9 +98,9 @@ async def test_polling_service_sends_active_contents_and_inactive_notice(
     await service.poll_once(notifier)
 
     texts = [text for _, text in notifier.messages]
-    assert texts.count("[Active Agent]\nfirst response") == 1
-    assert texts.count("[Active Agent]\nsecond response") == 1
-    assert texts.count("Agent Other Agent has 1 unread message(s). Use /agents to switch.") == 1
+    assert texts.count("> **Active Agent**\nfirst response") == 1
+    assert texts.count("> **Active Agent**\nsecond response") == 1
+    assert texts.count("> **Other Agent**\n1 unread message(s). Use /agents to switch.") == 1
 
 
 @pytest.mark.asyncio
@@ -124,3 +127,99 @@ async def test_polling_service_caps_active_agent_delivery_to_ten(
     await service.poll_once(notifier)
 
     assert len(notifier.messages) == 10
+
+
+@pytest.mark.asyncio
+async def test_polling_service_skips_agent_with_active_followup(
+    settings: Settings,
+    state_repo: StateRepository,
+) -> None:
+    session = await state_repo.get_session(1234)
+    session.telegram_chat_id = 5678
+    session.active_agent_id = "agent-active"
+    session.wizard_state = WizardStep.IDLE
+    await state_repo.upsert_session(session)
+
+    snapshot = AgentConversationSnapshot(
+        agent=make_agent("agent-active", "Active Agent"),
+        unread_messages=[make_message("msg-1", "response")],
+    )
+    notifier = FakeNotifier()
+    active_followups: set[str] = {"agent-active"}
+    service = PollingService(
+        settings=settings,
+        state_repo=state_repo,
+        agent_service=FakeAgentService([[snapshot]]),
+        active_followups=active_followups,
+    )
+
+    await service.poll_once(notifier)
+
+    assert len(notifier.messages) == 0
+
+
+@pytest.mark.asyncio
+async def test_inactive_notice_dedup_ignores_unstable_message_ids(
+    settings: Settings,
+    state_repo: StateRepository,
+) -> None:
+    """Notices for inactive agents deduplicate by unread count, not message ID."""
+    session = await state_repo.get_session(1234)
+    session.telegram_chat_id = 5678
+    session.active_agent_id = "agent-active"
+    session.wizard_state = WizardStep.IDLE
+    await state_repo.upsert_session(session)
+
+    snapshot_poll1 = AgentConversationSnapshot(
+        agent=make_agent("agent-other", "Other Agent"),
+        unread_messages=[make_message("uuid-aaa", "response")],
+    )
+    snapshot_poll2 = AgentConversationSnapshot(
+        agent=make_agent("agent-other", "Other Agent"),
+        unread_messages=[make_message("uuid-zzz", "response")],
+    )
+    notifier = FakeNotifier()
+    service = PollingService(
+        settings=settings,
+        state_repo=state_repo,
+        agent_service=FakeAgentService([[snapshot_poll1], [snapshot_poll2]]),
+    )
+
+    await service.poll_once(notifier)
+    await service.poll_once(notifier)
+
+    notice_texts = [text for _, text in notifier.messages if "unread" in text]
+    assert len(notice_texts) == 1
+
+
+@pytest.mark.asyncio
+async def test_polling_service_advances_delivery_cursor(
+    settings: Settings,
+    state_repo: StateRepository,
+) -> None:
+    """After a successful poll, the delivery cursor advances by the number of sent messages."""
+    session = await state_repo.get_session(1234)
+    session.telegram_chat_id = 5678
+    session.active_agent_id = "agent-active"
+    session.wizard_state = WizardStep.IDLE
+    await state_repo.upsert_session(session)
+
+    snapshot = AgentConversationSnapshot(
+        agent=make_agent("agent-active", "Active Agent"),
+        unread_messages=[
+            make_message("msg-1", "first"),
+            make_message("msg-2", "second"),
+        ],
+        delivered_count=3,
+    )
+    notifier = FakeNotifier()
+    service = PollingService(
+        settings=settings,
+        state_repo=state_repo,
+        agent_service=FakeAgentService([[snapshot]]),
+    )
+
+    await service.poll_once(notifier)
+
+    cursor = await state_repo.get_delivery_cursor("agent-active")
+    assert cursor == 5

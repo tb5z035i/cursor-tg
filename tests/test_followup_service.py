@@ -5,7 +5,7 @@ from collections import deque
 import pytest
 
 from cursor_tg_connector.config import Settings
-from cursor_tg_connector.cursor_api_models import Agent, AgentConversation, ConversationMessage
+from cursor_tg_connector.cursor_api_models import Agent, ConversationMessage
 from cursor_tg_connector.domain_types import WizardStep
 from cursor_tg_connector.services_agent_service import AgentConversationSnapshot
 from cursor_tg_connector.services_followup_service import FollowupService
@@ -18,33 +18,15 @@ class FakeNotifier:
     async def send_text(self, chat_id: int, text: str) -> None:
         self.messages.append(f"{chat_id}:{text}")
 
+    async def send_typing(self, chat_id: int) -> None:
+        pass
+
 
 class FakeCursorClient:
     def __init__(self) -> None:
         self.followups: list[tuple[str, str]] = []
-        self.before_conversation = AgentConversation.model_validate(
-            {
-                "id": "agent-1",
-                "messages": [
-                    {
-                        "id": "old-user",
-                        "type": "user_message",
-                        "text": "Initial request",
-                    },
-                    {
-                        "id": "old-assistant",
-                        "type": "assistant_message",
-                        "text": "Already unread",
-                    },
-                ],
-            }
-        )
 
-    async def get_conversation(self, agent_id: str) -> AgentConversation:
-        assert agent_id == "agent-1"
-        return self.before_conversation
-
-    async def add_followup(self, agent_id: str, prompt_text: str) -> str:
+    async def add_followup(self, agent_id: str, prompt_text: str, images=None) -> str:
         self.followups.append((agent_id, prompt_text))
         return agent_id
 
@@ -56,26 +38,12 @@ class FakeAgentService:
             [
                 AgentConversationSnapshot(
                     agent=self._agent(),
-                    unread_messages=[
-                        ConversationMessage.model_validate(
-                            {
-                                "id": "old-assistant",
-                                "type": "assistant_message",
-                                "text": "Already unread",
-                            }
-                        )
-                    ],
+                    unread_messages=[],
+                    delivered_count=1,
                 ),
                 AgentConversationSnapshot(
                     agent=self._agent(),
                     unread_messages=[
-                        ConversationMessage.model_validate(
-                            {
-                                "id": "old-assistant",
-                                "type": "assistant_message",
-                                "text": "Already unread",
-                            }
-                        ),
                         ConversationMessage.model_validate(
                             {
                                 "id": "new-assistant",
@@ -84,6 +52,7 @@ class FakeAgentService:
                             }
                         ),
                     ],
+                    delivered_count=1,
                 ),
             ]
         )
@@ -136,4 +105,56 @@ async def test_followup_service_only_relays_new_messages(settings: Settings, sta
     delivered_count = await service.send_followup(1234, 5678, "Please continue", notifier)
 
     assert delivered_count == 1
-    assert notifier.messages == ["5678:[Active Agent]\nNew result"]
+    assert notifier.messages == ["5678:> **Active Agent**\nNew result"]
+
+
+@pytest.mark.asyncio
+async def test_followup_service_registers_active_followup(settings: Settings, state_repo) -> None:
+    session = await state_repo.get_session(1234)
+    session.telegram_chat_id = 5678
+    session.active_agent_id = "agent-1"
+    session.wizard_state = WizardStep.IDLE
+    await state_repo.upsert_session(session)
+
+    active_followups: set[str] = set()
+    notifier = FakeNotifier()
+    service = FollowupService(
+        settings=settings,
+        cursor_client=FakeCursorClient(),
+        state_repo=state_repo,
+        agent_service=FakeAgentService(),
+        active_followups=active_followups,
+    )
+
+    await service.send_followup(1234, 5678, "Please continue", notifier)
+
+    assert "agent-1" not in active_followups
+
+
+@pytest.mark.asyncio
+async def test_followup_service_clears_flag_on_error(settings: Settings, state_repo) -> None:
+    session = await state_repo.get_session(1234)
+    session.telegram_chat_id = 5678
+    session.active_agent_id = "agent-1"
+    session.wizard_state = WizardStep.IDLE
+    await state_repo.upsert_session(session)
+
+    active_followups: set[str] = set()
+
+    class FailingAgentService(FakeAgentService):
+        async def deliver_active_agent_unread(self, **kwargs) -> int:
+            raise RuntimeError("boom")
+
+    notifier = FakeNotifier()
+    service = FollowupService(
+        settings=settings,
+        cursor_client=FakeCursorClient(),
+        state_repo=state_repo,
+        agent_service=FailingAgentService(),
+        active_followups=active_followups,
+    )
+
+    with pytest.raises(RuntimeError, match="boom"):
+        await service.send_followup(1234, 5678, "Please continue", notifier)
+
+    assert "agent-1" not in active_followups

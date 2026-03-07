@@ -23,6 +23,7 @@ BOT_COMMANDS: list[tuple[str, str]] = [
     ("current", "Show info about the current active agent"),
     ("agents", "List agents and switch the active one"),
     ("unfocus", "Clear the active agent selection"),
+    ("stop", "Stop the current running active agent"),
     ("clear", "Mark all unread messages as read for the active agent"),
     ("newagent", "Create a new Cursor cloud agent"),
     ("cancel", "Cancel an in-progress create-agent wizard"),

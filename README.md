@@ -96,8 +96,8 @@ Any other text message is forwarded as a follow-up to the active agent.
 - The service polls the Cursor API every 10 seconds (configurable) for running agents.
 - **Active agent**: unread assistant messages are delivered as Telegram messages with Markdown rendering, up to 10 per poll cycle.
 - **Other agents**: unread behavior is configurable with `/unread`:
-  - `count` (default) sends a summary notice when new unread messages appear.
-  - `full` delivers unread assistant messages in full, like the active agent.
+  - `count` (default) sends a summary notice when new unread messages appear, with a button to switch to that agent.
+  - `full` delivers unread assistant messages in full, like the active agent, with a switch button on the first message in the batch.
   - `none` suppresses notifications until you switch to that agent.
 - When you switch agents via `/agents`, unread messages are delivered immediately.
 - Messages from Cursor agents are converted from Markdown to Telegram HTML (bold, italic, code blocks, blockquotes, lists).

@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import deque
 
 import pytest
+from telegram import InlineKeyboardMarkup
 
 from cursor_tg_connector.config import Settings
 from cursor_tg_connector.cursor_api_models import Agent, ConversationMessage
@@ -17,10 +18,15 @@ from cursor_tg_connector.services_polling_service import PollingService
 
 class FakeNotifier:
     def __init__(self) -> None:
-        self.messages: list[tuple[int, str]] = []
+        self.messages: list[tuple[int, str, InlineKeyboardMarkup | None]] = []
 
-    async def send_text(self, chat_id: int, text: str) -> None:
-        self.messages.append((chat_id, text))
+    async def send_text(
+        self,
+        chat_id: int,
+        text: str,
+        reply_markup: InlineKeyboardMarkup | None = None,
+    ) -> None:
+        self.messages.append((chat_id, text, reply_markup))
 
     async def send_typing(self, chat_id: int) -> None:
         pass
@@ -100,10 +106,20 @@ async def test_polling_service_sends_active_contents_and_inactive_notice(
     await service.poll_once(notifier)
     await service.poll_once(notifier)
 
-    texts = [text for _, text in notifier.messages]
+    texts = [text for _, text, _ in notifier.messages]
     assert texts.count("> **Active Agent**\nfirst response") == 1
     assert texts.count("> **Active Agent**\nsecond response") == 1
-    assert texts.count("> **Other Agent**\n1 unread message(s). Use /agents to switch.") == 1
+    assert (
+        texts.count(
+            "> **Other Agent**\n1 unread message(s). Tap below or use /agents to switch."
+        )
+        == 1
+    )
+    notice_markup = next(
+        markup for _, text, markup in notifier.messages if "1 unread message(s)." in text
+    )
+    assert notice_markup is not None
+    assert notice_markup.inline_keyboard[0][0].callback_data == "agent:switch:agent-other"
 
 
 @pytest.mark.asyncio
@@ -191,7 +207,7 @@ async def test_inactive_notice_dedup_ignores_unstable_message_ids(
     await service.poll_once(notifier)
     await service.poll_once(notifier)
 
-    notice_texts = [text for _, text in notifier.messages if "unread" in text]
+    notice_texts = [text for _, text, _ in notifier.messages if "unread" in text]
     assert len(notice_texts) == 1
 
 
@@ -256,10 +272,15 @@ async def test_polling_service_can_deliver_full_text_for_inactive_agents(
 
     await service.poll_once(notifier)
 
-    assert [text for _, text in notifier.messages] == [
+    assert [text for _, text, _ in notifier.messages] == [
         "> **Other Agent**\nfirst hidden response",
         "> **Other Agent**\nsecond hidden response",
     ]
+    first_markup = notifier.messages[0][2]
+    second_markup = notifier.messages[1][2]
+    assert first_markup is not None
+    assert first_markup.inline_keyboard[0][0].callback_data == "agent:switch:agent-other"
+    assert second_markup is None
     cursor = await state_repo.get_delivery_cursor("agent-other")
     assert cursor == 6
 

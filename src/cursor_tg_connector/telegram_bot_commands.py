@@ -26,7 +26,8 @@ _HELP_TEXT = (
     "• Send /newagent to create a new agent (model → repo → branch → prompt).\n"
     "• Send any text message to follow up with the active agent.\n"
     "• Unread messages from the active agent are delivered automatically.\n"
-    "• Unselected agents can show full responses, unread counts, or nothing."
+    "• Unselected agents can show full responses, unread counts, or nothing.\n"
+    "  When shown, they include a tap-to-switch button."
 )
 
 

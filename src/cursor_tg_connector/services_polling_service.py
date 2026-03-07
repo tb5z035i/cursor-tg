@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 import logging
 
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+
 from cursor_tg_connector.config import Settings
 from cursor_tg_connector.domain_types import UnselectedAgentUnreadMode
 from cursor_tg_connector.persistence_state_repo import StateRepository
@@ -10,6 +12,7 @@ from cursor_tg_connector.services_agent_service import (
     AgentConversationSnapshot,
     AgentService,
 )
+from cursor_tg_connector.telegram_bot_constants import SWITCH_AGENT_PREFIX
 from cursor_tg_connector.utils_formatting import build_active_agent_message, build_agent_notice
 
 logger = logging.getLogger(__name__)
@@ -105,10 +108,15 @@ class PollingService:
 
         if unread_mode == UnselectedAgentUnreadMode.FULL:
             cursor = snapshot.delivered_count
-            for message in snapshot.unread_messages[:10]:
+            switch_keyboard = _build_switch_agent_keyboard(
+                snapshot.agent.id,
+                snapshot.agent.name or snapshot.agent.id,
+            )
+            for index, message in enumerate(snapshot.unread_messages[:10]):
                 await notifier.send_text(
                     chat_id,
                     build_active_agent_message(snapshot.agent, message.text),
+                    reply_markup=switch_keyboard if index == 0 else None,
                 )
                 cursor += 1
                 await self.state_repo.set_delivery_cursor(snapshot.agent.id, cursor)
@@ -120,7 +128,14 @@ class PollingService:
         if notice_state.last_notified_unread_count == unread_count:
             return
 
-        await notifier.send_text(chat_id, build_agent_notice(snapshot.agent, unread_count))
+        await notifier.send_text(
+            chat_id,
+            build_agent_notice(snapshot.agent, unread_count),
+            reply_markup=_build_switch_agent_keyboard(
+                snapshot.agent.id,
+                snapshot.agent.name or snapshot.agent.id,
+            ),
+        )
         await self.state_repo.update_notice_state(
             snapshot.agent.id,
             unread_count,
@@ -131,3 +146,16 @@ class PollingService:
         session = await self.state_repo.get_session(self.settings.telegram_allowed_user_id)
         if session.active_agent_id and session.active_agent_id not in seen_agent_ids:
             await self.state_repo.clear_notice_state(session.active_agent_id)
+
+
+def _build_switch_agent_keyboard(agent_id: str, agent_name: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(
+                    text=f"Switch to {agent_name}",
+                    callback_data=f"{SWITCH_AGENT_PREFIX}{agent_id}",
+                )
+            ]
+        ]
+    )

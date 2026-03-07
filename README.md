@@ -83,6 +83,7 @@ The SQLite database defaults to `/data/connector.db`. Mount `/data` to persisten
 |---|---|
 | `/current` | Show info about the active agent (name, status, repo, branches, PR link) |
 | `/agents` | List running and finished agents; tap one to switch and deliver its unread messages |
+| `/stop` | Stop the currently selected running agent and clear the active selection |
 | `/clear` | Mark all unread messages as read for the active agent |
 | `/newagent` | Create a new agent with a 4-step wizard (model → repo → branch → prompt) |
 | `/cancel` | Abort the in-progress `/newagent` wizard |

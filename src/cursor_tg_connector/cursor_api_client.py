@@ -94,6 +94,10 @@ class CursorApiClient:
         )
         return str(payload["id"])
 
+    async def stop_agent(self, agent_id: str) -> str:
+        payload = await self._request("DELETE", f"/v0/agents/{agent_id}")
+        return str(payload["id"])
+
     async def create_agent(
         self,
         *,

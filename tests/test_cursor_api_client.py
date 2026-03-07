@@ -91,6 +91,25 @@ async def test_create_agent_surfaces_cursor_error_message() -> None:
 
 
 @pytest.mark.asyncio
+async def test_stop_agent_calls_stop_endpoint() -> None:
+    async with httpx.AsyncClient(base_url="https://api.cursor.com") as http_client:
+        client = CursorApiClient(
+            api_key="test-key",
+            base_url="https://api.cursor.com",
+            http_client=http_client,
+        )
+
+        with respx.mock(assert_all_called=True) as router:
+            router.post("https://api.cursor.com/v0/agents/agent-1/stop").mock(
+                return_value=httpx.Response(200, json={"id": "agent-1"})
+            )
+
+            agent_id = await client.stop_agent("agent-1")
+
+    assert agent_id == "agent-1"
+
+
+@pytest.mark.asyncio
 async def test_request_retries_on_server_error_then_succeeds() -> None:
     async with httpx.AsyncClient(base_url="https://api.cursor.com") as http_client:
         client = CursorApiClient(

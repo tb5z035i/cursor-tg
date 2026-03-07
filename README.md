@@ -85,6 +85,8 @@ The SQLite database defaults to `/data/connector.db`. Mount `/data` to persisten
 | `/agents` | List running and finished agents; tap one to switch and deliver its unread messages |
 | `/focus` | Show clickable agent options to choose the active agent |
 | `/configure_unread` | Configure how unread messages from unselected agents are shown: `full`, `count`, or `none` |
+| `/unfocus` | Clear the currently selected active agent |
+| `/stop` | Stop the currently selected running agent and clear the active selection |
 | `/clear` | Mark all unread messages as read for the active agent |
 | `/newagent` | Create a new agent with a 4-step wizard (model → repo → branch → prompt) |
 | `/cancel` | Abort the in-progress `/newagent` wizard |

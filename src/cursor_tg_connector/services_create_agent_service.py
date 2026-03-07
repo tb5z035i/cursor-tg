@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
@@ -8,6 +9,8 @@ from cursor_tg_connector.cursor_api_models import Agent, PromptImage
 from cursor_tg_connector.domain_types import SessionState, WizardStep
 from cursor_tg_connector.persistence_state_repo import StateRepository
 from cursor_tg_connector.utils_formatting import paginate
+
+logger = logging.getLogger(__name__)
 
 
 class CreateAgentError(RuntimeError):
@@ -182,6 +185,7 @@ class CreateAgentService:
             raise CreateAgentError("No prompt input is expected right now.")
 
         payload = session.wizard_payload
+        previous_active_agent_id = session.active_agent_id
         agent = await self.cursor_client.create_agent(
             model=payload["model"],
             repository_url=payload["repository"],
@@ -190,6 +194,8 @@ class CreateAgentService:
             images=images,
         )
         await self.state_repo.set_delivery_cursor(agent.id, 0)
+        if previous_active_agent_id and previous_active_agent_id != agent.id:
+            await self._silence_agent(previous_active_agent_id)
         await self.state_repo.clear_wizard(telegram_user_id)
         await self.state_repo.set_active_agent(telegram_user_id, agent.id)
         return agent
@@ -236,3 +242,19 @@ class CreateAgentService:
                 "Wizard state is missing required options. Run /newagent again."
             )
         return values
+
+    async def _silence_agent(self, agent_id: str) -> None:
+        try:
+            conversation = await self.cursor_client.get_conversation(agent_id)
+            total = sum(
+                1 for message in conversation.messages if message.type == "assistant_message"
+            )
+            await self.state_repo.set_delivery_cursor(agent_id, total)
+        except Exception:
+            logger.warning(
+                "Failed to silence unread state for previous active agent %s",
+                agent_id,
+                exc_info=True,
+            )
+        finally:
+            await self.state_repo.clear_notice_state(agent_id)

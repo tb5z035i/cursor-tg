@@ -3,7 +3,9 @@ from __future__ import annotations
 from telegram import Update
 from telegram.ext import ContextTypes
 
+from cursor_tg_connector.cursor_api_client import CursorApiError
 from cursor_tg_connector.domain_types import UnselectedAgentUnreadMode
+from cursor_tg_connector.services_agent_service import AgentStopError
 from cursor_tg_connector.services_create_agent_service import CreateAgentError
 from cursor_tg_connector.telegram_bot_common import (
     BOT_COMMANDS,
@@ -24,11 +26,19 @@ _HELP_TEXT = (
     "• Send /agents to see running agents and switch the active one.\n"
     "• Send /focus to choose the active agent from clickable options only.\n"
     "• Send /configure_unread full|count|none to configure non-active agent unread behavior.\n"
+    "• Send /unfocus to clear the current active agent selection.\n"
+    "• Send /stop to stop the currently selected running agent.\n"
     "• Send /newagent to create a new agent (model → repo → branch → prompt).\n"
     "• Send any text message to follow up with the active agent.\n"
     "• Unread messages from the active agent are delivered automatically.\n"
     "• Unselected agents can show full responses, unread counts, or nothing.\n"
     "  When shown, they include a tap-to-switch button."
+)
+
+_STOP_HELP_TEXT = (
+    "No active agent selected.\n"
+    "\n"
+    "Use /focus to pick a running agent, then send /stop to stop it."
 )
 
 
@@ -83,7 +93,8 @@ async def clear_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
 
 async def configure_unread_command(
-    update: Update, context: ContextTypes.DEFAULT_TYPE
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
     if not await _authorize_and_record_chat(update, context):
         return
@@ -113,6 +124,43 @@ async def configure_unread_command(
         "Unread handling for unselected agents is now set to "
         f"{_describe_unread_mode(mode)}."
     )
+
+
+async def unfocus_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not await _authorize_and_record_chat(update, context):
+        return
+
+    services = get_services(context)
+    cleared = await services.agent_service.clear_active_agent(
+        services.settings.telegram_allowed_user_id,
+    )
+    if not cleared:
+        await update.effective_message.reply_text("No active agent is currently selected.")
+        return
+
+    await update.effective_message.reply_text(
+        "Cleared the active agent selection. Use /focus to pick one again."
+    )
+
+
+async def stop_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not await _authorize_and_record_chat(update, context):
+        return
+
+    services = get_services(context)
+    try:
+        agent = await services.agent_service.stop_active_agent(
+            services.settings.telegram_allowed_user_id,
+        )
+    except (AgentStopError, CursorApiError) as exc:
+        await update.effective_message.reply_text(str(exc))
+        return
+
+    if agent is None:
+        await update.effective_message.reply_text(_STOP_HELP_TEXT)
+        return
+
+    await update.effective_message.reply_text(f"Stopped {agent.name or agent.id}.")
 
 
 async def focus_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

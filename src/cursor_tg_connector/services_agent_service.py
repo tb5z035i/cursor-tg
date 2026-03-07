@@ -17,6 +17,10 @@ class AgentConversationSnapshot:
     delivered_count: int = 0
 
 
+class AgentStopError(RuntimeError):
+    pass
+
+
 class AgentService:
     def __init__(self, cursor_client: CursorApiClient, state_repo: StateRepository) -> None:
         self.cursor_client = cursor_client
@@ -55,11 +59,34 @@ class AgentService:
         agent = await self.cursor_client.get_agent(agent_id)
         return agent.name or agent_id
 
+    async def stop_active_agent(self, telegram_user_id: int) -> Agent | None:
+        session = await self.state_repo.get_session(telegram_user_id)
+        if not session.active_agent_id:
+            return None
+
+        agent = await self.cursor_client.get_agent(session.active_agent_id)
+        if agent.status != "RUNNING":
+            raise AgentStopError(
+                f"{agent.name or agent.id} is not running. Use /focus to select a running agent."
+            )
+
+        await self.cursor_client.stop_agent(agent.id)
+        await self.state_repo.set_active_agent(telegram_user_id, None)
+        await self.state_repo.clear_notice_state(agent.id)
+        return agent
+
     async def ensure_active_agent_exists(self, telegram_user_id: int) -> Agent | None:
         session = await self.state_repo.get_session(telegram_user_id)
         if not session.active_agent_id:
             return None
         return await self.cursor_client.get_agent(session.active_agent_id)
+
+    async def clear_active_agent(self, telegram_user_id: int) -> bool:
+        session = await self.state_repo.get_session(telegram_user_id)
+        if session.active_agent_id is None:
+            return False
+        await self.state_repo.set_active_agent(telegram_user_id, None)
+        return True
 
     async def switch_active_agent(
         self,

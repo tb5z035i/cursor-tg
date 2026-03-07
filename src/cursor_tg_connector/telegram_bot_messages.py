@@ -91,7 +91,10 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             await msg.reply_text(str(exc))
             return
 
-        await msg.reply_text(build_agent_created_message(agent))
+        await notifier.send_text(
+            update.effective_chat.id,
+            build_agent_created_message(agent),
+        )
         return
 
     images = await _extract_images(update)

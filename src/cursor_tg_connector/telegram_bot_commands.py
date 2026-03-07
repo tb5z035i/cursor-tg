@@ -3,6 +3,7 @@ from __future__ import annotations
 from telegram import Update
 from telegram.ext import ContextTypes
 
+from cursor_tg_connector.domain_types import UnselectedAgentUnreadMode
 from cursor_tg_connector.services_create_agent_service import CreateAgentError
 from cursor_tg_connector.telegram_bot_common import (
     BOT_COMMANDS,
@@ -21,10 +22,11 @@ _HELP_TEXT = (
     "\n"
     "Usage:\n"
     "• Send /agents to see running agents and switch the active one.\n"
+    "• Send /unread full|count|none to configure non-active agent unread behavior.\n"
     "• Send /newagent to create a new agent (model → repo → branch → prompt).\n"
     "• Send any text message to follow up with the active agent.\n"
     "• Unread messages from the active agent are delivered automatically.\n"
-    "• Non-active agents show unread counts; use /agents to switch."
+    "• Unselected agents can show full responses, unread counts, or nothing."
 )
 
 
@@ -75,6 +77,37 @@ async def clear_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
     await update.effective_message.reply_text(
         f"Cleared all unread messages for {agent_name}."
+    )
+
+
+async def unread_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not await _authorize_and_record_chat(update, context):
+        return
+
+    services = get_services(context)
+    message = update.effective_message
+    if message is None:
+        return
+
+    if not context.args:
+        session = await services.create_agent_service.state_repo.get_session(
+            services.settings.telegram_allowed_user_id
+        )
+        await message.reply_text(_build_unread_command_text(session.unselected_agent_unread_mode))
+        return
+
+    mode = _parse_unread_mode(context.args[0])
+    if mode is None:
+        await message.reply_text(_build_unread_command_text(None))
+        return
+
+    await services.create_agent_service.state_repo.set_unselected_agent_unread_mode(
+        services.settings.telegram_allowed_user_id,
+        mode,
+    )
+    await message.reply_text(
+        "Unread handling for unselected agents is now set to "
+        f"{_describe_unread_mode(mode)}."
     )
 
 
@@ -156,3 +189,43 @@ async def _authorize_and_record_chat(update: Update, context: ContextTypes.DEFAU
             update.effective_chat.id,
         )
     return True
+
+
+def _parse_unread_mode(value: str) -> UnselectedAgentUnreadMode | None:
+    normalized = value.strip().lower()
+    aliases = {
+        "full": UnselectedAgentUnreadMode.FULL,
+        "text": UnselectedAgentUnreadMode.FULL,
+        "count": UnselectedAgentUnreadMode.COUNT,
+        "number": UnselectedAgentUnreadMode.COUNT,
+        "none": UnselectedAgentUnreadMode.NONE,
+        "off": UnselectedAgentUnreadMode.NONE,
+        "hide": UnselectedAgentUnreadMode.NONE,
+    }
+    return aliases.get(normalized)
+
+
+def _describe_unread_mode(mode: UnselectedAgentUnreadMode) -> str:
+    descriptions = {
+        UnselectedAgentUnreadMode.FULL: "full text delivery",
+        UnselectedAgentUnreadMode.COUNT: "unread count notices",
+        UnselectedAgentUnreadMode.NONE: "no notifications",
+    }
+    return descriptions[mode]
+
+
+def _build_unread_command_text(
+    current_mode: UnselectedAgentUnreadMode | None,
+) -> str:
+    current = (
+        f"Current setting: {_describe_unread_mode(current_mode)}.\n\n"
+        if current_mode is not None
+        else ""
+    )
+    return (
+        f"{current}"
+        "Usage: /unread <full|count|none>\n"
+        "• full — deliver unread messages from unselected agents in full.\n"
+        "• count — send only unread-count notices (default).\n"
+        "• none — send nothing until you switch to that agent."
+    )

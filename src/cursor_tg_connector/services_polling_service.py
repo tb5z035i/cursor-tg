@@ -4,6 +4,7 @@ import asyncio
 import logging
 
 from cursor_tg_connector.config import Settings
+from cursor_tg_connector.domain_types import UnselectedAgentUnreadMode
 from cursor_tg_connector.persistence_state_repo import StateRepository
 from cursor_tg_connector.services_agent_service import (
     AgentConversationSnapshot,
@@ -53,7 +54,12 @@ class PollingService:
                 if snapshot.agent.id == active_agent_id:
                     await self._handle_active_snapshot(snapshot, notifier, chat_id)
                 else:
-                    await self._handle_inactive_snapshot(snapshot, notifier, chat_id)
+                    await self._handle_inactive_snapshot(
+                        snapshot,
+                        notifier,
+                        chat_id,
+                        session.unselected_agent_unread_mode,
+                    )
 
             if active_agent_id and active_agent_id not in self.active_followups:
                 active = next(
@@ -87,8 +93,25 @@ class PollingService:
         snapshot: AgentConversationSnapshot,
         notifier,
         chat_id: int,
+        unread_mode: UnselectedAgentUnreadMode,
     ) -> None:
         if not snapshot.unread_messages:
+            await self.state_repo.clear_notice_state(snapshot.agent.id)
+            return
+
+        if unread_mode == UnselectedAgentUnreadMode.NONE:
+            await self.state_repo.clear_notice_state(snapshot.agent.id)
+            return
+
+        if unread_mode == UnselectedAgentUnreadMode.FULL:
+            cursor = snapshot.delivered_count
+            for message in snapshot.unread_messages[:10]:
+                await notifier.send_text(
+                    chat_id,
+                    build_active_agent_message(snapshot.agent, message.text),
+                )
+                cursor += 1
+                await self.state_repo.set_delivery_cursor(snapshot.agent.id, cursor)
             await self.state_repo.clear_notice_state(snapshot.agent.id)
             return
 

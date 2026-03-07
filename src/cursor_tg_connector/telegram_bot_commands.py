@@ -47,11 +47,11 @@ async def agents_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         return
 
     services = get_services(context)
-    items = await services.agent_service.list_running_agents_with_unread_counts(
+    items = await services.agent_service.list_agents_with_unread_counts(
         services.settings.telegram_allowed_user_id
     )
     if not items:
-        await update.effective_message.reply_text("No running agents found.")
+        await update.effective_message.reply_text("No agents found.")
         return
 
     keyboard = render_agent_keyboard(
@@ -64,7 +64,7 @@ async def agents_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         ]
     )
     summary = format_command_list(
-        "Running agents",
+        "Agents",
         [item.label for item in items],
     )
     await update.effective_message.reply_text(summary, reply_markup=keyboard)

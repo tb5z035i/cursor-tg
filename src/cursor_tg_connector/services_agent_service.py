@@ -22,14 +22,14 @@ class AgentService:
         self.cursor_client = cursor_client
         self.state_repo = state_repo
 
-    async def list_running_agents_with_unread_counts(
+    async def list_agents_with_unread_counts(
         self,
         telegram_user_id: int,
     ) -> list[AgentListItem]:
         session = await self.state_repo.get_session(telegram_user_id)
-        running_agents = await self._list_running_agents()
+        agents = await self._list_agents({"RUNNING", "COMPLETED"})
         snapshots = await asyncio.gather(
-            *(self.get_unread_snapshot(agent.id) for agent in running_agents),
+            *(self.get_unread_snapshot(agent.id) for agent in agents),
         )
 
         items: list[AgentListItem] = []
@@ -103,11 +103,11 @@ class AgentService:
         )
 
     async def list_running_snapshots(self) -> list[AgentConversationSnapshot]:
-        running_agents = await self._list_running_agents()
+        agents = await self._list_agents({"RUNNING"})
         return await asyncio.gather(
-            *(self.get_unread_snapshot(agent.id) for agent in running_agents)
+            *(self.get_unread_snapshot(agent.id) for agent in agents)
         )
 
-    async def _list_running_agents(self) -> list[Agent]:
+    async def _list_agents(self, statuses: set[str]) -> list[Agent]:
         agents = await self.cursor_client.list_agents()
-        return [agent for agent in agents if agent.status == "RUNNING"]
+        return [agent for agent in agents if agent.status in statuses]

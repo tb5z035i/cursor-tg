@@ -1,10 +1,46 @@
 from __future__ import annotations
 
+import html
+import re
 from collections.abc import Iterable
 
 from cursor_tg_connector.cursor_api_models import Agent, Repository
 
 TELEGRAM_MESSAGE_LIMIT = 4000
+
+_PLACEHOLDER_CODEBLOCK = "\x00CB"
+_PLACEHOLDER_INLINE = "\x00IC"
+
+
+def markdown_to_telegram_html(text: str) -> str:
+    code_blocks: list[str] = []
+    inline_codes: list[str] = []
+
+    def _save_code_block(match: re.Match) -> str:
+        code_blocks.append(match.group(1) or match.group(2))
+        return f"{_PLACEHOLDER_CODEBLOCK}{len(code_blocks) - 1}\x00"
+
+    def _save_inline_code(match: re.Match) -> str:
+        inline_codes.append(match.group(1))
+        return f"{_PLACEHOLDER_INLINE}{len(inline_codes) - 1}\x00"
+
+    text = re.sub(r"```\w*\n(.*?)```", _save_code_block, text, flags=re.DOTALL)
+    text = re.sub(r"```(.*?)```", _save_code_block, text, flags=re.DOTALL)
+    text = re.sub(r"`([^`]+)`", _save_inline_code, text)
+
+    text = html.escape(text)
+    text = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", text)
+    text = re.sub(r"(?<!\*)\*([^*\n]+?)\*(?!\*)", r"<i>\1</i>", text)
+    text = re.sub(r"^#{1,6}\s+(.+)$", r"<b>\1</b>", text, flags=re.MULTILINE)
+    text = re.sub(r"^[-*]\s+", "• ", text, flags=re.MULTILINE)
+
+    for i, code in enumerate(code_blocks):
+        escaped = html.escape(code.strip())
+        text = text.replace(f"{_PLACEHOLDER_CODEBLOCK}{i}\x00", f"<pre>{escaped}</pre>")
+    for i, code in enumerate(inline_codes):
+        escaped = html.escape(code)
+        text = text.replace(f"{_PLACEHOLDER_INLINE}{i}\x00", f"<code>{escaped}</code>")
+    return text.strip()
 
 
 def shorten_repository_name(repository_url: str) -> str:

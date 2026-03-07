@@ -49,7 +49,7 @@ class FakeCursorClient:
 
 
 @pytest.mark.asyncio
-async def test_list_running_agents_includes_unread_counts(state_repo) -> None:
+async def test_list_agents_includes_unread_counts(state_repo) -> None:
     client = FakeCursorClient()
     service = AgentService(client, state_repo)
 
@@ -59,7 +59,7 @@ async def test_list_running_agents_includes_unread_counts(state_repo) -> None:
     await state_repo.set_delivery_cursor("agent-1", 1)
     await state_repo.set_delivery_cursor("agent-2", 0)
 
-    items = await service.list_running_agents_with_unread_counts(1234)
+    items = await service.list_agents_with_unread_counts(1234)
 
     item_by_id = {item.agent_id: item for item in items}
     assert item_by_id["agent-1"].unread_count == 1

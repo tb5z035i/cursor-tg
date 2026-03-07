@@ -34,6 +34,14 @@ def markdown_to_telegram_html(text: str) -> str:
     text = re.sub(r"^#{1,6}\s+(.+)$", r"<b>\1</b>", text, flags=re.MULTILINE)
     text = re.sub(r"^[-*]\s+", "• ", text, flags=re.MULTILINE)
 
+    def _blockquote(match: re.Match) -> str:
+        content = re.sub(r"^&gt;\s?", "", match.group(0), flags=re.MULTILINE)
+        return f"<blockquote>{content.strip()}</blockquote>"
+
+    text = re.sub(
+        r"^&gt;\s?.+(?:\n&gt;\s?.+)*", _blockquote, text, flags=re.MULTILINE
+    )
+
     for i, code in enumerate(code_blocks):
         escaped = html.escape(code.strip())
         text = text.replace(f"{_PLACEHOLDER_CODEBLOCK}{i}\x00", f"<pre>{escaped}</pre>")
@@ -60,14 +68,13 @@ def build_agent_label(agent: Agent, unread_count: int) -> str:
 
 def build_agent_notice(agent: Agent, unread_count: int) -> str:
     return (
-        f"Agent {agent.name or agent.id} has {unread_count} unread message(s). "
-        "Use /agents to switch."
+        f"> **{agent.name or agent.id}**\n"
+        f"{unread_count} unread message(s). Use /agents to switch."
     )
 
 
 def build_active_agent_message(agent: Agent, text: str) -> str:
-    header = f"[{agent.name or agent.id}]"
-    return f"{header}\n{text}".strip()
+    return f"> **{agent.name or agent.id}**\n{text}".strip()
 
 
 def build_agent_info_message(agent: Agent) -> str:
@@ -75,7 +82,7 @@ def build_agent_info_message(agent: Agent) -> str:
     target_branch = agent.target.branch_name or "—"
     pr_url = agent.target.pr_url or "—"
     lines = [
-        f"**{agent.name or agent.id}**",
+        f"> **{agent.name or agent.id}**",
         f"Status: {agent.status}",
         f"Repository: {repo_name}",
         f"Base branch: {agent.source.ref or 'unknown'}",
@@ -92,7 +99,7 @@ def build_agent_created_message(agent: Agent) -> str:
     repo_name = shorten_repository_name(agent.source.repository)
     target_branch = agent.target.branch_name or "pending-branch"
     return (
-        f"Created agent {agent.name or agent.id}\n"
+        f"> **{agent.name or agent.id}** — created\n"
         f"Repository: {repo_name}\n"
         f"Base branch: {agent.source.ref or 'unknown'}\n"
         f"Working branch: {target_branch}\n"

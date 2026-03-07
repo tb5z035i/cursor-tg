@@ -95,9 +95,9 @@ async def test_polling_service_sends_active_contents_and_inactive_notice(
     await service.poll_once(notifier)
 
     texts = [text for _, text in notifier.messages]
-    assert texts.count("[Active Agent]\nfirst response") == 1
-    assert texts.count("[Active Agent]\nsecond response") == 1
-    assert texts.count("Agent Other Agent has 1 unread message(s). Use /agents to switch.") == 1
+    assert texts.count("> **Active Agent**\nfirst response") == 1
+    assert texts.count("> **Active Agent**\nsecond response") == 1
+    assert texts.count("> **Other Agent**\n1 unread message(s). Use /agents to switch.") == 1
 
 
 @pytest.mark.asyncio

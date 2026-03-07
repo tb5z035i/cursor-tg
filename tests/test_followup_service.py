@@ -102,7 +102,7 @@ async def test_followup_service_only_relays_new_messages(settings: Settings, sta
     delivered_count = await service.send_followup(1234, 5678, "Please continue", notifier)
 
     assert delivered_count == 1
-    assert notifier.messages == ["5678:[Active Agent]\nNew result"]
+    assert notifier.messages == ["5678:> **Active Agent**\nNew result"]
 
 
 @pytest.mark.asyncio

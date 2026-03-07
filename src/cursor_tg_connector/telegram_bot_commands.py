@@ -13,7 +13,10 @@ from cursor_tg_connector.telegram_bot_common import (
     render_agent_keyboard,
     render_model_keyboard,
 )
-from cursor_tg_connector.utils_formatting import build_agent_info_message, format_command_list
+from cursor_tg_connector.utils_formatting import (
+    build_agent_info_message,
+    build_agents_summary_message,
+)
 
 _HELP_TEXT = (
     "Cursor Telegram connector — manage Cursor Cloud agents from Telegram.\n"
@@ -23,7 +26,7 @@ _HELP_TEXT = (
     + "\n"
     "\n"
     "Usage:\n"
-    "• Send /agents to see running agents and switch the active one.\n"
+    "• Send /agents to see running and finished agents in a summary table.\n"
     "• Send /focus to choose the active agent from clickable options only.\n"
     "• Send /configure_unread full|count|none to configure non-active agent unread behavior.\n"
     "• Send /unfocus to clear the current active agent selection.\n"
@@ -183,17 +186,16 @@ async def agents_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if not await _authorize_and_record_chat(update, context):
         return
 
-    items = await _list_agent_selection_items(context)
+    services = get_services(context)
+    items = await services.agent_service.list_agents_with_unread_counts(
+        services.settings.telegram_allowed_user_id
+    )
     if not items:
         await update.effective_message.reply_text("No agents found.")
         return
 
-    keyboard = render_agent_keyboard(items)
-    summary = format_command_list(
-        "Agents",
-        [label for _, label in items],
-    )
-    await update.effective_message.reply_text(summary, reply_markup=keyboard)
+    summary = build_agents_summary_message(items)
+    await update.effective_message.reply_text(summary, parse_mode="HTML")
 
 
 async def new_agent_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

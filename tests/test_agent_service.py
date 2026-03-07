@@ -68,6 +68,10 @@ async def test_list_agents_includes_unread_counts(state_repo) -> None:
 
     item_by_id = {item.agent_id: item for item in items}
     assert item_by_id["agent-1"].unread_count == 1
+    assert item_by_id["agent-1"].status == "RUNNING"
+    assert item_by_id["agent-1"].repository == "acme/repo-a"
+    assert item_by_id["agent-1"].branch == "main"
+    assert "RUNNING" in item_by_id["agent-1"].label
     assert item_by_id["agent-2"].unread_count == 1
     assert item_by_id["agent-2"].is_active is True
 

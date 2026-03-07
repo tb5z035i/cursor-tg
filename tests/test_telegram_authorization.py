@@ -183,13 +183,21 @@ async def test_focus_command_shows_clickable_agent_options_only(settings) -> Non
     items = [
         AgentListItem(
             agent_id="agent-1",
-            label="Agent One · acme/repo · main · unread:0",
+            name="Agent One",
+            status="RUNNING",
+            repository="acme/repo",
+            branch="main",
+            label="Agent One · RUNNING · acme/repo · main · unread:0",
             unread_count=0,
             is_active=True,
         ),
         AgentListItem(
             agent_id="agent-2",
-            label="Agent Two · acme/repo · main · unread:2",
+            name="Agent Two",
+            status="FINISHED",
+            repository="acme/repo",
+            branch="main",
+            label="Agent Two · FINISHED · acme/repo · main · unread:2",
             unread_count=2,
             is_active=False,
         ),

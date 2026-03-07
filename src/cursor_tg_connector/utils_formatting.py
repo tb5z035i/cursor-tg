@@ -5,6 +5,7 @@ import re
 from collections.abc import Iterable
 
 from cursor_tg_connector.cursor_api_models import Agent, Repository
+from cursor_tg_connector.domain_types import AgentListItem
 
 TELEGRAM_MESSAGE_LIMIT = 4000
 
@@ -62,7 +63,7 @@ def build_agent_label(agent: Agent, unread_count: int) -> str:
     repo_name = shorten_repository_name(agent.source.repository)
     branch = agent.source.ref or "unknown-branch"
     unread_suffix = f"unread:{unread_count}"
-    parts = [agent.name.strip() or agent.id, repo_name, branch, unread_suffix]
+    parts = [agent.name.strip() or agent.id, agent.status, repo_name, branch, unread_suffix]
     return " · ".join(parts)
 
 
@@ -142,3 +143,82 @@ def format_command_list(title: str, lines: Iterable[str]) -> str:
     if not items:
         return f"{title}\n(none)"
     return f"{title}\n" + "\n".join(f"- {line}" for line in items)
+
+
+def build_agents_summary_message(items: Iterable[AgentListItem]) -> str:
+    agent_items = list(items)
+    if not agent_items:
+        return "Agents\n(none)"
+
+    table = format_text_table(
+        ["Active", "Name", "Status", "Repository", "Branch", "Unread"],
+        [
+            [
+                "yes" if item.is_active else "",
+                item.name,
+                item.status,
+                item.repository,
+                item.branch,
+                str(item.unread_count),
+            ]
+            for item in agent_items
+        ],
+        max_widths=[6, 24, 10, 24, 18, 6],
+    )
+    return (
+        "Agents\n"
+        "<pre>"
+        f"{html.escape(table)}"
+        "</pre>\n"
+        "Use /focus to switch the active agent."
+    )
+
+
+def format_text_table(
+    headers: list[str],
+    rows: list[list[str]],
+    *,
+    max_widths: list[int] | None = None,
+) -> str:
+    normalized_rows = [[_normalize_table_cell(cell) for cell in row] for row in rows]
+    normalized_headers = [_normalize_table_cell(header) for header in headers]
+    widths: list[int] = []
+    for index, header in enumerate(normalized_headers):
+        values = [header, *[row[index] for row in normalized_rows]]
+        width = max(len(value) for value in values)
+        if max_widths is not None:
+            width = min(width, max_widths[index])
+        widths.append(width)
+
+    rendered_headers = [
+        _truncate_table_cell(header, widths[index]).ljust(widths[index])
+        for index, header in enumerate(normalized_headers)
+    ]
+    rendered_rows = [
+        " | ".join(
+            _truncate_table_cell(cell, widths[index]).ljust(widths[index])
+            for index, cell in enumerate(row)
+        )
+        for row in normalized_rows
+    ]
+    separator = "-+-".join("-" * width for width in widths)
+    return "\n".join(
+        [
+            " | ".join(rendered_headers),
+            separator,
+            *rendered_rows,
+        ]
+    )
+
+
+def _normalize_table_cell(value: str) -> str:
+    collapsed = " ".join(value.split())
+    return collapsed or "-"
+
+
+def _truncate_table_cell(value: str, width: int) -> str:
+    if len(value) <= width:
+        return value
+    if width <= 3:
+        return value[:width]
+    return f"{value[: width - 3]}..."

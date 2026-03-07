@@ -22,7 +22,7 @@ from cursor_tg_connector.telegram_bot_constants import (
 
 BOT_COMMANDS: list[tuple[str, str]] = [
     ("current", "Show info about the current active agent"),
-    ("agents", "List agents and switch the active one"),
+    ("agents", "List agents in a summary table"),
     ("focus", "Choose the active agent from clickable options"),
     ("configure_unread", "Configure unread messages for unselected agents"),
     ("unfocus", "Clear the active agent selection"),

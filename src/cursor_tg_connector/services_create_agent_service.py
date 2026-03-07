@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
 from cursor_tg_connector.cursor_api_client import CursorApiClient
-from cursor_tg_connector.cursor_api_models import Agent
+from cursor_tg_connector.cursor_api_models import Agent, PromptImage
 from cursor_tg_connector.domain_types import SessionState, WizardStep
 from cursor_tg_connector.persistence_state_repo import StateRepository
 from cursor_tg_connector.utils_formatting import paginate
@@ -167,7 +167,12 @@ class CreateAgentService:
         payload.pop("branches", None)
         await self.state_repo.set_wizard(telegram_user_id, WizardStep.WAITING_PROMPT, payload)
 
-    async def finish_prompt(self, telegram_user_id: int, prompt_text: str) -> Agent:
+    async def finish_prompt(
+        self,
+        telegram_user_id: int,
+        prompt_text: str,
+        images: list[PromptImage] | None = None,
+    ) -> Agent:
         prompt_text = prompt_text.strip()
         if not prompt_text:
             raise CreateAgentError("Prompt text cannot be empty.")
@@ -182,6 +187,7 @@ class CreateAgentService:
             repository_url=payload["repository"],
             base_branch=payload["branch"],
             prompt_text=prompt_text,
+            images=images,
         )
         await self.state_repo.set_delivery_cursor(agent.id, 0)
         await self.state_repo.clear_wizard(telegram_user_id)

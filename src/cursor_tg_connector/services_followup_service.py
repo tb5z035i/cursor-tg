@@ -4,6 +4,7 @@ import asyncio
 
 from cursor_tg_connector.config import Settings
 from cursor_tg_connector.cursor_api_client import CursorApiClient
+from cursor_tg_connector.cursor_api_models import PromptImage
 from cursor_tg_connector.persistence_state_repo import StateRepository
 from cursor_tg_connector.services_agent_service import AgentService
 from cursor_tg_connector.utils_formatting import build_active_agent_message
@@ -37,6 +38,7 @@ class FollowupService:
         chat_id: int,
         text: str,
         notifier,
+        images: list[PromptImage] | None = None,
     ) -> int:
         text = text.strip()
         if not text:
@@ -56,12 +58,13 @@ class FollowupService:
                 limit=10,
             )
 
-            await self.cursor_client.add_followup(agent_id, text)
+            await self.cursor_client.add_followup(agent_id, text, images=images)
 
             timeout = self.settings.followup_poll_timeout_seconds
             deadline = asyncio.get_running_loop().time() + timeout
             while asyncio.get_running_loop().time() < deadline:
                 await asyncio.sleep(self.settings.followup_poll_interval_seconds)
+                await notifier.send_typing(chat_id)
                 snapshot = await self.agent_service.get_unread_snapshot(agent_id)
                 if not snapshot.unread_messages:
                     continue

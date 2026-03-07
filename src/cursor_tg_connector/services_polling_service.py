@@ -55,6 +55,13 @@ class PollingService:
                 else:
                     await self._handle_inactive_snapshot(snapshot, notifier, chat_id)
 
+            if active_agent_id and active_agent_id not in self.active_followups:
+                active = next(
+                    (s for s in snapshots if s.agent.id == active_agent_id), None
+                )
+                if active and active.agent.status == "RUNNING":
+                    await notifier.send_typing(chat_id)
+
             await self._clear_stale_notice_states(seen_agent_ids)
 
     async def _handle_active_snapshot(

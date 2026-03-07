@@ -14,6 +14,7 @@ from cursor_tg_connector.cursor_api_models import (
     ListAgentsResponse,
     ListModelsResponse,
     ListRepositoriesResponse,
+    PromptImage,
 )
 
 logger = logging.getLogger(__name__)
@@ -77,11 +78,19 @@ class CursorApiClient:
         payload = await self._request("GET", f"/v0/agents/{agent_id}/conversation")
         return AgentConversation.model_validate(payload)
 
-    async def add_followup(self, agent_id: str, prompt_text: str) -> str:
+    async def add_followup(
+        self,
+        agent_id: str,
+        prompt_text: str,
+        images: list[PromptImage] | None = None,
+    ) -> str:
+        prompt: dict[str, Any] = {"text": prompt_text}
+        if images:
+            prompt["images"] = [img.model_dump(exclude_none=True) for img in images]
         payload = await self._request(
             "POST",
             f"/v0/agents/{agent_id}/followup",
-            json={"prompt": {"text": prompt_text}},
+            json={"prompt": prompt},
         )
         return str(payload["id"])
 
@@ -92,13 +101,17 @@ class CursorApiClient:
         repository_url: str,
         base_branch: str,
         prompt_text: str,
+        images: list[PromptImage] | None = None,
     ) -> Agent:
+        prompt: dict[str, Any] = {"text": prompt_text}
+        if images:
+            prompt["images"] = [img.model_dump(exclude_none=True) for img in images]
         payload = await self._request(
             "POST",
             "/v0/agents",
             json={
                 "model": model,
-                "prompt": {"text": prompt_text},
+                "prompt": prompt,
                 "source": {"repository": repository_url, "ref": base_branch},
             },
             expected_status=201,

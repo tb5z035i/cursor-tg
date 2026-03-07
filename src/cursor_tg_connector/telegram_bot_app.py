@@ -24,7 +24,7 @@ from cursor_tg_connector.telegram_bot_commands import (
     start_command,
 )
 from cursor_tg_connector.telegram_bot_common import BOT_COMMANDS, AppServices
-from cursor_tg_connector.telegram_bot_messages import text_message_handler
+from cursor_tg_connector.telegram_bot_messages import message_handler
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +50,10 @@ def build_application(services: AppServices) -> Application:
     application.add_handler(CommandHandler("cancel", cancel_command))
     application.add_handler(CallbackQueryHandler(callback_router))
     application.add_handler(
-        MessageHandler(filters.TEXT & ~filters.COMMAND, text_message_handler)
+        MessageHandler(filters.TEXT & ~filters.COMMAND, message_handler)
+    )
+    application.add_handler(
+        MessageHandler(filters.PHOTO, message_handler)
     )
     application.add_error_handler(error_handler)
 

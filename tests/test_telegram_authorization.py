@@ -6,7 +6,7 @@ import pytest
 
 from cursor_tg_connector.telegram_bot_callbacks import callback_router
 from cursor_tg_connector.telegram_bot_commands import start_command
-from cursor_tg_connector.telegram_bot_messages import text_message_handler
+from cursor_tg_connector.telegram_bot_messages import message_handler
 
 
 class FakeMessage:
@@ -54,7 +54,7 @@ async def test_start_command_ignores_unauthorized_user(settings) -> None:
 
 
 @pytest.mark.asyncio
-async def test_text_message_handler_ignores_unauthorized_user(settings) -> None:
+async def test_message_handler_ignores_unauthorized_user(settings) -> None:
     message = FakeMessage("hello")
     update = SimpleNamespace(
         effective_user=SimpleNamespace(id=settings.telegram_allowed_user_id + 1),
@@ -62,7 +62,7 @@ async def test_text_message_handler_ignores_unauthorized_user(settings) -> None:
         effective_chat=SimpleNamespace(id=999),
     )
 
-    await text_message_handler(update, build_context(settings))
+    await message_handler(update, build_context(settings))
 
     assert message.replies == []
 

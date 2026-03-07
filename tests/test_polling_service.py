@@ -19,6 +19,9 @@ class FakeNotifier:
     async def send_text(self, chat_id: int, text: str) -> None:
         self.messages.append((chat_id, text))
 
+    async def send_typing(self, chat_id: int) -> None:
+        pass
+
 
 class FakeAgentService:
     def __init__(self, poll_batches: list[list[AgentConversationSnapshot]]) -> None:

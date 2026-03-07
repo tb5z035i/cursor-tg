@@ -18,12 +18,15 @@ class FakeNotifier:
     async def send_text(self, chat_id: int, text: str) -> None:
         self.messages.append(f"{chat_id}:{text}")
 
+    async def send_typing(self, chat_id: int) -> None:
+        pass
+
 
 class FakeCursorClient:
     def __init__(self) -> None:
         self.followups: list[tuple[str, str]] = []
 
-    async def add_followup(self, agent_id: str, prompt_text: str) -> str:
+    async def add_followup(self, agent_id: str, prompt_text: str, images=None) -> str:
         self.followups.append((agent_id, prompt_text))
         return agent_id
 

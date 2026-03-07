@@ -27,7 +27,7 @@ class AgentService:
         telegram_user_id: int,
     ) -> list[AgentListItem]:
         session = await self.state_repo.get_session(telegram_user_id)
-        agents = await self._list_agents({"RUNNING", "COMPLETED"})
+        agents = await self._list_agents({"RUNNING", "FINISHED"})
         snapshots = await asyncio.gather(
             *(self.get_unread_snapshot(agent.id) for agent in agents),
         )

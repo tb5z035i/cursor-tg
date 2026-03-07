@@ -17,6 +17,7 @@ from cursor_tg_connector.telegram_bot_callbacks import callback_router
 from cursor_tg_connector.telegram_bot_commands import (
     agents_command,
     cancel_command,
+    current_command,
     help_command,
     new_agent_command,
     start_command,
@@ -41,6 +42,7 @@ def build_application(services: AppServices) -> Application:
 
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(CommandHandler("help", help_command))
+    application.add_handler(CommandHandler("current", current_command))
     application.add_handler(CommandHandler("agents", agents_command))
     application.add_handler(CommandHandler("newagent", new_agent_command))
     application.add_handler(CommandHandler("cancel", cancel_command))

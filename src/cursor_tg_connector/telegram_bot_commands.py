@@ -10,7 +10,7 @@ from cursor_tg_connector.telegram_bot_common import (
     render_agent_keyboard,
     render_model_keyboard,
 )
-from cursor_tg_connector.utils_formatting import format_command_list
+from cursor_tg_connector.utils_formatting import build_agent_info_message, format_command_list
 
 _HELP_TEXT = (
     "Cursor Telegram connector — manage Cursor Cloud agents from Telegram.\n"
@@ -40,6 +40,23 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         return
 
     await update.effective_message.reply_text(_HELP_TEXT)
+
+
+async def current_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not await _authorize_and_record_chat(update, context):
+        return
+
+    services = get_services(context)
+    agent = await services.agent_service.ensure_active_agent_exists(
+        services.settings.telegram_allowed_user_id,
+    )
+    if agent is None:
+        await update.effective_message.reply_text(
+            "No active agent selected. Use /agents to pick one."
+        )
+        return
+
+    await update.effective_message.reply_text(build_agent_info_message(agent))
 
 
 async def agents_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

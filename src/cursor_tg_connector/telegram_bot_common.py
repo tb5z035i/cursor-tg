@@ -20,7 +20,8 @@ BRANCH_SELECT_PREFIX = "wizard:branch:"
 BRANCH_PAGE_PREFIX = "wizard:branch_page:"
 
 BOT_COMMANDS: list[tuple[str, str]] = [
-    ("agents", "List running agents and switch active agent"),
+    ("current", "Show info about the current active agent"),
+    ("agents", "List agents and switch the active one"),
     ("newagent", "Create a new Cursor cloud agent"),
     ("cancel", "Cancel an in-progress create-agent wizard"),
     ("help", "Show available commands and usage"),

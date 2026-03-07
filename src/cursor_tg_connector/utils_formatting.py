@@ -70,6 +70,24 @@ def build_active_agent_message(agent: Agent, text: str) -> str:
     return f"{header}\n{text}".strip()
 
 
+def build_agent_info_message(agent: Agent) -> str:
+    repo_name = shorten_repository_name(agent.source.repository)
+    target_branch = agent.target.branch_name or "—"
+    pr_url = agent.target.pr_url or "—"
+    lines = [
+        f"**{agent.name or agent.id}**",
+        f"Status: {agent.status}",
+        f"Repository: {repo_name}",
+        f"Base branch: {agent.source.ref or 'unknown'}",
+        f"Working branch: {target_branch}",
+        f"PR: {pr_url}",
+        f"URL: {agent.target.url}",
+    ]
+    if agent.summary:
+        lines.append(f"\n{agent.summary}")
+    return "\n".join(lines)
+
+
 def build_agent_created_message(agent: Agent) -> str:
     repo_name = shorten_repository_name(agent.source.repository)
     target_branch = agent.target.branch_name or "pending-branch"

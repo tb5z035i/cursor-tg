@@ -44,6 +44,17 @@ class AgentService:
             )
         return items
 
+    async def clear_unread(self, telegram_user_id: int) -> str | None:
+        session = await self.state_repo.get_session(telegram_user_id)
+        if not session.active_agent_id:
+            return None
+        agent_id = session.active_agent_id
+        conversation = await self.cursor_client.get_conversation(agent_id)
+        total = sum(1 for m in conversation.messages if m.type == "assistant_message")
+        await self.state_repo.set_delivery_cursor(agent_id, total)
+        agent = await self.cursor_client.get_agent(agent_id)
+        return agent.name or agent_id
+
     async def ensure_active_agent_exists(self, telegram_user_id: int) -> Agent | None:
         session = await self.state_repo.get_session(telegram_user_id)
         if not session.active_agent_id:

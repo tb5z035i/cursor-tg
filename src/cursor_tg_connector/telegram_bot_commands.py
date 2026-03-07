@@ -59,6 +59,25 @@ async def current_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     await update.effective_message.reply_text(build_agent_info_message(agent))
 
 
+async def clear_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not await _authorize_and_record_chat(update, context):
+        return
+
+    services = get_services(context)
+    agent_name = await services.agent_service.clear_unread(
+        services.settings.telegram_allowed_user_id,
+    )
+    if agent_name is None:
+        await update.effective_message.reply_text(
+            "No active agent selected. Use /agents to pick one."
+        )
+        return
+
+    await update.effective_message.reply_text(
+        f"Cleared all unread messages for {agent_name}."
+    )
+
+
 async def agents_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not await _authorize_and_record_chat(update, context):
         return

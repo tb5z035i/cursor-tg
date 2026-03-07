@@ -73,6 +73,16 @@ async def _switch_agent(update: Update, context: ContextTypes.DEFAULT_TYPE, agen
     await query.answer("Active agent switched")
     await query.edit_message_text(f"Active agent: {agent.name or agent.id}")
 
+    from cursor_tg_connector.services_notification import TelegramNotifier
+
+    notifier = TelegramNotifier(context.bot)
+    await services.agent_service.deliver_active_agent_unread(
+        agent_id=agent_id,
+        notifier=notifier,
+        chat_id=update.effective_chat.id,
+        limit=10,
+    )
+
 
 async def _show_model_page(update: Update, context: ContextTypes.DEFAULT_TYPE, page: int) -> None:
     query = update.callback_query

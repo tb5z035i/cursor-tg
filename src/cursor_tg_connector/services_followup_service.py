@@ -46,7 +46,7 @@ class FollowupService:
 
         session = await self.state_repo.update_chat_context(telegram_user_id, chat_id)
         if not session.active_agent_id:
-            raise FollowupError("No active agent selected. Use /agents first.")
+            raise FollowupError("No active agent selected. Use /focus first.")
 
         agent_id = session.active_agent_id
         self.active_followups.add(agent_id)

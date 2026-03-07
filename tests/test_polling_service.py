@@ -111,7 +111,7 @@ async def test_polling_service_sends_active_contents_and_inactive_notice(
     assert texts.count("> **Active Agent**\nsecond response") == 1
     assert (
         texts.count(
-            "> **Other Agent**\n1 unread message(s). Tap below or use /agents to switch."
+            "> **Other Agent**\n1 unread message(s). Tap below or use /focus to switch."
         )
         == 1
     )

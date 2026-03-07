@@ -23,7 +23,8 @@ from cursor_tg_connector.telegram_bot_constants import (
 BOT_COMMANDS: list[tuple[str, str]] = [
     ("current", "Show info about the current active agent"),
     ("agents", "List agents and switch the active one"),
-    ("unread", "Configure unread messages for unselected agents"),
+    ("focus", "Choose the active agent from clickable options"),
+    ("configure_unread", "Configure unread messages for unselected agents"),
     ("clear", "Mark all unread messages as read for the active agent"),
     ("newagent", "Create a new Cursor cloud agent"),
     ("cancel", "Cancel an in-progress create-agent wizard"),

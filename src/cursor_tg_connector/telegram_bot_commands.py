@@ -22,7 +22,8 @@ _HELP_TEXT = (
     "\n"
     "Usage:\n"
     "• Send /agents to see running agents and switch the active one.\n"
-    "• Send /unread full|count|none to configure non-active agent unread behavior.\n"
+    "• Send /focus to choose the active agent from clickable options only.\n"
+    "• Send /configure_unread full|count|none to configure non-active agent unread behavior.\n"
     "• Send /newagent to create a new agent (model → repo → branch → prompt).\n"
     "• Send any text message to follow up with the active agent.\n"
     "• Unread messages from the active agent are delivered automatically.\n"
@@ -55,7 +56,7 @@ async def current_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     )
     if agent is None:
         await update.effective_message.reply_text(
-            "No active agent selected. Use /agents to pick one."
+            "No active agent selected. Use /focus to pick one."
         )
         return
 
@@ -72,7 +73,7 @@ async def clear_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     )
     if agent_name is None:
         await update.effective_message.reply_text(
-            "No active agent selected. Use /agents to pick one."
+            "No active agent selected. Use /focus to pick one."
         )
         return
 
@@ -81,7 +82,9 @@ async def clear_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     )
 
 
-async def unread_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def configure_unread_command(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
     if not await _authorize_and_record_chat(update, context):
         return
 
@@ -112,30 +115,35 @@ async def unread_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     )
 
 
+async def focus_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not await _authorize_and_record_chat(update, context):
+        return
+
+    message = update.effective_message
+    if message is None:
+        return
+
+    items = await _list_agent_selection_items(context)
+    if not items:
+        await message.reply_text("No agents found.")
+        return
+
+    await message.reply_text("Select an agent:", reply_markup=render_agent_keyboard(items))
+
+
 async def agents_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not await _authorize_and_record_chat(update, context):
         return
 
-    services = get_services(context)
-    items = await services.agent_service.list_agents_with_unread_counts(
-        services.settings.telegram_allowed_user_id
-    )
+    items = await _list_agent_selection_items(context)
     if not items:
         await update.effective_message.reply_text("No agents found.")
         return
 
-    keyboard = render_agent_keyboard(
-        [
-            (
-                item.agent_id,
-                f"{'✅ ' if item.is_active else ''}{item.label}",
-            )
-            for item in items
-        ]
-    )
+    keyboard = render_agent_keyboard(items)
     summary = format_command_list(
         "Agents",
-        [item.label for item in items],
+        [label for _, label in items],
     )
     await update.effective_message.reply_text(summary, reply_markup=keyboard)
 
@@ -225,8 +233,24 @@ def _build_unread_command_text(
     )
     return (
         f"{current}"
-        "Usage: /unread <full|count|none>\n"
+        "Usage: /configure_unread <full|count|none>\n"
         "• full — deliver unread messages from unselected agents in full.\n"
         "• count — send only unread-count notices (default).\n"
         "• none — send nothing until you switch to that agent."
     )
+
+
+async def _list_agent_selection_items(
+    context: ContextTypes.DEFAULT_TYPE,
+) -> list[tuple[str, str]]:
+    services = get_services(context)
+    items = await services.agent_service.list_agents_with_unread_counts(
+        services.settings.telegram_allowed_user_id
+    )
+    return [
+        (
+            item.agent_id,
+            f"{'✅ ' if item.is_active else ''}{item.label}",
+        )
+        for item in items
+    ]

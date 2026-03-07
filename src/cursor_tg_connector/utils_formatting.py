@@ -10,11 +10,13 @@ TELEGRAM_MESSAGE_LIMIT = 4000
 
 _PLACEHOLDER_CODEBLOCK = "\x00CB"
 _PLACEHOLDER_INLINE = "\x00IC"
+_PLACEHOLDER_LINK = "\x00LN"
 
 
 def markdown_to_telegram_html(text: str) -> str:
     code_blocks: list[str] = []
     inline_codes: list[str] = []
+    links: list[tuple[str, str]] = []
 
     def _save_code_block(match: re.Match) -> str:
         code_blocks.append(match.group(1) or match.group(2))
@@ -24,9 +26,14 @@ def markdown_to_telegram_html(text: str) -> str:
         inline_codes.append(match.group(1))
         return f"{_PLACEHOLDER_INLINE}{len(inline_codes) - 1}\x00"
 
+    def _save_link(match: re.Match) -> str:
+        links.append((match.group(1), match.group(2)))
+        return f"{_PLACEHOLDER_LINK}{len(links) - 1}\x00"
+
     text = re.sub(r"```\w*\n(.*?)```", _save_code_block, text, flags=re.DOTALL)
     text = re.sub(r"```(.*?)```", _save_code_block, text, flags=re.DOTALL)
     text = re.sub(r"`([^`]+)`", _save_inline_code, text)
+    text = re.sub(r"\[([^\]]+)\]\((https?://[^)]+)\)", _save_link, text)
 
     text = html.escape(text)
     text = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", text)
@@ -48,6 +55,13 @@ def markdown_to_telegram_html(text: str) -> str:
     for i, code in enumerate(inline_codes):
         escaped = html.escape(code)
         text = text.replace(f"{_PLACEHOLDER_INLINE}{i}\x00", f"<code>{escaped}</code>")
+    for i, (label, url) in enumerate(links):
+        escaped_label = html.escape(label)
+        escaped_url = html.escape(url)
+        text = text.replace(
+            f"{_PLACEHOLDER_LINK}{i}\x00",
+            f'<a href="{escaped_url}">{escaped_label}</a>',
+        )
     return text.strip()
 
 

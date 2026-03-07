@@ -3,13 +3,16 @@ from __future__ import annotations
 import asyncio
 import logging
 
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+
 from cursor_tg_connector.config import Settings
-from cursor_tg_connector.domain_types import WizardStep
+from cursor_tg_connector.domain_types import UnselectedAgentUnreadMode, WizardStep
 from cursor_tg_connector.persistence_state_repo import StateRepository
 from cursor_tg_connector.services_agent_service import (
     AgentConversationSnapshot,
     AgentService,
 )
+from cursor_tg_connector.telegram_bot_constants import SWITCH_AGENT_PREFIX
 from cursor_tg_connector.utils_formatting import build_active_agent_message, build_agent_notice
 
 logger = logging.getLogger(__name__)
@@ -58,12 +61,22 @@ class PollingService:
                 if snapshot.agent.id in self.active_followups:
                     continue
                 if session.thread_mode_enabled:
-                    await self._handle_thread_mode_snapshot(snapshot, notifier, chat_id)
+                    await self._handle_thread_mode_snapshot(
+                        snapshot,
+                        notifier,
+                        chat_id,
+                        session.unselected_agent_unread_mode,
+                    )
                     continue
                 if snapshot.agent.id == active_agent_id:
                     await self._handle_active_snapshot(snapshot, notifier, chat_id)
                 else:
-                    await self._handle_inactive_snapshot(snapshot, notifier, chat_id)
+                    await self._handle_inactive_snapshot(
+                        snapshot,
+                        notifier,
+                        chat_id,
+                        session.unselected_agent_unread_mode,
+                    )
 
             if (
                 not session.thread_mode_enabled
@@ -101,9 +114,33 @@ class PollingService:
         snapshot: AgentConversationSnapshot,
         notifier,
         chat_id: int,
+        unread_mode: UnselectedAgentUnreadMode,
         threaded: bool = False,
     ) -> None:
         if not snapshot.unread_messages:
+            await self.state_repo.clear_notice_state(snapshot.agent.id)
+            return
+
+        if unread_mode == UnselectedAgentUnreadMode.NONE:
+            await self.state_repo.clear_notice_state(snapshot.agent.id)
+            return
+
+        if unread_mode == UnselectedAgentUnreadMode.FULL:
+            cursor = snapshot.delivered_count
+            switch_keyboard = _build_switch_agent_keyboard(
+                snapshot.agent.id,
+                snapshot.agent.name or snapshot.agent.id,
+                threaded=threaded,
+            )
+            for index, message in enumerate(snapshot.unread_messages[:10]):
+                await notifier.send_text(
+                    chat_id,
+                    build_active_agent_message(snapshot.agent, message.text),
+                    message_thread_id=None,
+                    reply_markup=switch_keyboard if index == 0 else None,
+                )
+                cursor += 1
+                await self.state_repo.set_delivery_cursor(snapshot.agent.id, cursor)
             await self.state_repo.clear_notice_state(snapshot.agent.id)
             return
 
@@ -115,6 +152,11 @@ class PollingService:
         await notifier.send_text(
             chat_id,
             build_agent_notice(snapshot.agent, unread_count, threaded=threaded),
+            reply_markup=_build_switch_agent_keyboard(
+                snapshot.agent.id,
+                snapshot.agent.name or snapshot.agent.id,
+                threaded=threaded,
+            ),
         )
         await self.state_repo.update_notice_state(
             snapshot.agent.id,
@@ -127,6 +169,7 @@ class PollingService:
         snapshot: AgentConversationSnapshot,
         notifier,
         root_chat_id: int,
+        unread_mode: UnselectedAgentUnreadMode,
     ) -> None:
         binding = await self.state_repo.get_agent_thread_binding(snapshot.agent.id)
         if binding is not None:
@@ -143,9 +186,34 @@ class PollingService:
                 await self.state_repo.clear_notice_state(snapshot.agent.id)
             return
 
-        await self._handle_inactive_snapshot(snapshot, notifier, root_chat_id, threaded=True)
+        await self._handle_inactive_snapshot(
+            snapshot,
+            notifier,
+            root_chat_id,
+            unread_mode,
+            threaded=True,
+        )
 
     async def _clear_stale_notice_states(self, seen_agent_ids: set[str]) -> None:
         session = await self.state_repo.get_session(self.settings.telegram_allowed_user_id)
         if session.active_agent_id and session.active_agent_id not in seen_agent_ids:
             await self.state_repo.clear_notice_state(session.active_agent_id)
+
+
+def _build_switch_agent_keyboard(
+    agent_id: str,
+    agent_name: str,
+    *,
+    threaded: bool = False,
+) -> InlineKeyboardMarkup:
+    button_text = f"Open thread for {agent_name}" if threaded else f"Switch to {agent_name}"
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(
+                    text=button_text,
+                    callback_data=f"{SWITCH_AGENT_PREFIX}{agent_id}",
+                )
+            ]
+        ]
+    )

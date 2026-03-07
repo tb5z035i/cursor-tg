@@ -31,6 +31,7 @@ class FakeBot:
         text: str,
         parse_mode: str | None = None,
         message_thread_id: int | None = None,
+        reply_markup=None,
     ) -> None:
         self.messages.append((chat_id, message_thread_id, text))
 

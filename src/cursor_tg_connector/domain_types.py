@@ -13,12 +13,21 @@ class WizardStep(StrEnum):
     WAITING_PROMPT = "waiting_prompt"
 
 
+class UnselectedAgentUnreadMode(StrEnum):
+    FULL = "full"
+    COUNT = "count"
+    NONE = "none"
+
+
 @dataclass(slots=True)
 class SessionState:
     telegram_user_id: int
     telegram_chat_id: int | None = None
     active_agent_id: str | None = None
     thread_mode_enabled: bool = False
+    unselected_agent_unread_mode: UnselectedAgentUnreadMode = (
+        UnselectedAgentUnreadMode.COUNT
+    )
     wizard_state: WizardStep = WizardStep.IDLE
     wizard_payload: dict[str, Any] = field(default_factory=dict)
     last_create_agent_at: str | None = None
@@ -34,6 +43,10 @@ class AgentUnreadState:
 @dataclass(slots=True)
 class AgentListItem:
     agent_id: str
+    name: str
+    status: str
+    repository: str
+    branch: str
     label: str
     unread_count: int
     is_active: bool

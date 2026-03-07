@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from typing import Protocol
 
-from telegram import Bot
+from telegram import Bot, InlineKeyboardMarkup
 from telegram.constants import ChatAction
 
 from cursor_tg_connector.utils_formatting import chunk_message, markdown_to_telegram_html
@@ -17,6 +17,7 @@ class Notifier(Protocol):
         chat_id: int,
         text: str,
         message_thread_id: int | None = None,
+        reply_markup: InlineKeyboardMarkup | None = None,
     ) -> None: ...
     async def send_typing(self, chat_id: int, message_thread_id: int | None = None) -> None: ...
 
@@ -30,8 +31,11 @@ class TelegramNotifier:
         chat_id: int,
         text: str,
         message_thread_id: int | None = None,
+        reply_markup: InlineKeyboardMarkup | None = None,
     ) -> None:
-        for chunk in chunk_message(text):
+        chunks = chunk_message(text)
+        for index, chunk in enumerate(chunks):
+            chunk_markup = reply_markup if index == len(chunks) - 1 else None
             try:
                 html_chunk = markdown_to_telegram_html(chunk)
                 await self.bot.send_message(
@@ -39,6 +43,7 @@ class TelegramNotifier:
                     text=html_chunk,
                     parse_mode="HTML",
                     message_thread_id=message_thread_id,
+                    reply_markup=chunk_markup,
                 )
             except Exception:
                 logger.debug("HTML send failed, falling back to plain text")
@@ -46,6 +51,7 @@ class TelegramNotifier:
                     chat_id=chat_id,
                     text=chunk,
                     message_thread_id=message_thread_id,
+                    reply_markup=chunk_markup,
                 )
 
     async def send_typing(self, chat_id: int, message_thread_id: int | None = None) -> None:

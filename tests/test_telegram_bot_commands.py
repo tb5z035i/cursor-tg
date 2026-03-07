@@ -5,9 +5,10 @@ from types import SimpleNamespace
 import pytest
 
 from cursor_tg_connector.cursor_api_models import Agent, AgentConversation
-from cursor_tg_connector.domain_types import AgentThreadBinding
+from cursor_tg_connector.domain_types import AgentListItem, AgentThreadBinding
 from cursor_tg_connector.services_agent_service import AgentService
 from cursor_tg_connector.telegram_bot_commands import (
+    agents_command,
     new_agent_command,
     resetdb_command,
     stop_command,
@@ -18,13 +19,11 @@ from cursor_tg_connector.utils_formatting import build_reset_db_prompt
 
 class FakeMessage:
     def __init__(self) -> None:
-        self.replies: list[str] = []
-        self.reply_markups: list[object | None] = []
+        self.replies: list[tuple[str, dict[str, object]]] = []
         self.message_thread_id: int | None = None
 
-    async def reply_text(self, text: str, **_: object) -> None:
-        self.replies.append(text)
-        self.reply_markups.append(_.get("reply_markup"))
+    async def reply_text(self, text: str, **kwargs: object) -> None:
+        self.replies.append((text, dict(kwargs)))
 
 
 class FakeCursorClient:
@@ -72,11 +71,20 @@ class FakeCreateAgentService:
         return False
 
 
+class FakeListAgentService:
+    def __init__(self, items: list[AgentListItem]) -> None:
+        self.items = items
+
+    async def list_agents_with_unread_counts(self, telegram_user_id: int) -> list[AgentListItem]:
+        assert telegram_user_id == 1234
+        return self.items
+
+
 def build_context(
     *,
     settings,
     state_repo,
-    agent_service: AgentService,
+    agent_service: object,
     create_agent_service: FakeCreateAgentService | None = None,
     args: list[str] | None = None,
 ) -> SimpleNamespace:
@@ -88,6 +96,62 @@ def build_context(
     )
     application = SimpleNamespace(bot_data={"services": services})
     return SimpleNamespace(application=application, args=args or [])
+
+
+@pytest.mark.asyncio
+async def test_agents_command_renders_status_table_without_clickable_options(
+    settings,
+    state_repo,
+) -> None:
+    message = FakeMessage()
+    items = [
+        AgentListItem(
+            agent_id="agent-1",
+            name="Agent One",
+            status="RUNNING",
+            repository="acme/repo-a",
+            branch="main",
+            label="Agent One · RUNNING · acme/repo-a · main · unread:2",
+            unread_count=2,
+            is_active=True,
+        ),
+        AgentListItem(
+            agent_id="agent-2",
+            name="Agent Two",
+            status="FINISHED",
+            repository="acme/repo-b",
+            branch="dev",
+            label="Agent Two · FINISHED · acme/repo-b · dev · unread:0",
+            unread_count=0,
+            is_active=False,
+        ),
+    ]
+    update = SimpleNamespace(
+        effective_user=SimpleNamespace(id=settings.telegram_allowed_user_id),
+        effective_message=message,
+        effective_chat=SimpleNamespace(id=999),
+    )
+
+    await agents_command(
+        update,
+        build_context(
+            settings=settings,
+            state_repo=state_repo,
+            agent_service=FakeListAgentService(items),
+        ),
+    )
+
+    session = await state_repo.get_session(settings.telegram_allowed_user_id)
+    assert session.telegram_chat_id == 999
+    assert len(message.replies) == 1
+
+    summary, kwargs = message.replies[0]
+    assert kwargs == {"parse_mode": "HTML"}
+    assert "<pre>" in summary
+    assert "Status" in summary
+    assert "RUNNING" in summary
+    assert "FINISHED" in summary
+    assert "Use /focus to switch the active agent." in summary
 
 
 @pytest.mark.asyncio
@@ -105,11 +169,9 @@ async def test_stop_command_shows_help_when_no_active_agent(settings, state_repo
         build_context(settings=settings, state_repo=state_repo, agent_service=agent_service),
     )
 
-    assert message.replies == [
-        (
-            "No active agent selected.\n\n"
-            "Use /agents to pick a running agent, then send /stop to stop it."
-        )
+    assert [text for text, _ in message.replies] == [
+        "No active agent selected.\n\n"
+        "Use /focus to pick a running agent, then send /stop to stop it."
     ]
 
 
@@ -131,8 +193,7 @@ async def test_stop_command_stops_selected_agent(settings, state_repo) -> None:
     )
 
     session = await state_repo.get_session(settings.telegram_allowed_user_id)
-
-    assert message.replies == ["Stopped Agent One."]
+    assert [text for text, _ in message.replies] == ["Stopped Agent One."]
     assert client.stopped_agent_ids == ["agent-1"]
     assert session.active_agent_id is None
 
@@ -159,7 +220,7 @@ async def test_threadmode_command_toggles_session_flag(settings, state_repo) -> 
 
     session = await state_repo.get_session(settings.telegram_allowed_user_id)
     assert session.thread_mode_enabled is True
-    assert "Thread mode is enabled." in message.replies[-1]
+    assert "Thread mode is enabled." in message.replies[-1][0]
 
 
 @pytest.mark.asyncio
@@ -177,8 +238,8 @@ async def test_resetdb_command_shows_confirmation_keyboard(settings, state_repo)
         build_context(settings=settings, state_repo=state_repo, agent_service=agent_service),
     )
 
-    assert message.replies == [build_reset_db_prompt()]
-    assert message.reply_markups[0] is not None
+    assert message.replies[0][0] == build_reset_db_prompt()
+    assert message.replies[0][1]["reply_markup"] is not None
 
 
 @pytest.mark.asyncio
@@ -202,11 +263,9 @@ async def test_stop_command_in_thread_mode_outside_thread_shows_guidance(
         build_context(settings=settings, state_repo=state_repo, agent_service=agent_service),
     )
 
-    assert message.replies == [
-        (
-            "This command only works inside a bound agent thread while thread mode is enabled. "
-            "Use /agents in the root chat to create or open the correct thread."
-        )
+    assert [text for text, _ in message.replies] == [
+        "This command only works inside a bound agent thread while thread mode is enabled. "
+        "Use /agents in the root chat to create or open the correct thread."
     ]
 
 
@@ -242,5 +301,7 @@ async def test_newagent_command_rejects_bound_thread_in_thread_mode(settings, st
         ),
     )
 
-    assert message.replies == ["Run /newagent from the root chat, not from inside an agent thread."]
+    assert [text for text, _ in message.replies] == [
+        "Run /newagent from the root chat, not from inside an agent thread."
+    ]
     assert create_agent_service.started == []

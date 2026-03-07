@@ -4,6 +4,7 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from cursor_tg_connector.cursor_api_client import CursorApiError
+from cursor_tg_connector.domain_types import UnselectedAgentUnreadMode
 from cursor_tg_connector.services_agent_service import AgentStopError
 from cursor_tg_connector.services_create_agent_service import CreateAgentError
 from cursor_tg_connector.telegram_bot_common import (
@@ -16,8 +17,10 @@ from cursor_tg_connector.telegram_bot_common import (
 )
 from cursor_tg_connector.utils_formatting import (
     build_agent_info_message,
+    build_agents_summary_message,
     build_reset_db_prompt,
     build_thread_command_guidance,
+    build_thread_mode_guidance,
     build_thread_mode_status,
     format_command_list,
 )
@@ -30,21 +33,23 @@ _HELP_TEXT = (
     + "\n"
     "\n"
     "Usage:\n"
-    "• Send /agents to see agents and open/create their thread.\n"
+    "• Send /agents to view agents. In thread mode it becomes the thread opener.\n"
+    "• Send /focus to choose the active agent from clickable options in non-thread mode.\n"
+    "• Send /configure_unread full|count|none to control non-active agent notices.\n"
     "• Send /unfocus to clear the current active agent selection.\n"
     "• Send /stop to stop the currently selected running agent.\n"
     "• Send /threadmode on to route each agent into its own Telegram thread.\n"
     "• Send /newagent to create a new agent (model → repo → branch → prompt).\n"
     "• Send any text message to follow up with the active agent or from inside an agent thread.\n"
-    "• Unread messages from the active agent are delivered automatically.\n"
-    "• In thread mode, root-chat notices tell you when to use /agents to create/open a thread.\n"
+    "• In thread mode, root-chat notices can still appear for unbound agents based on "
+    "/configure_unread.\n"
     "• Use /resetdb if you want to wipe and reinitialize local bot state."
 )
 
 _STOP_HELP_TEXT = (
     "No active agent selected.\n"
     "\n"
-    "Use /agents to pick a running agent, then send /stop to stop it."
+    "Use /focus to pick a running agent, then send /stop to stop it."
 )
 
 
@@ -86,7 +91,7 @@ async def current_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         )
     if agent is None:
         await update.effective_message.reply_text(
-            "No active agent selected. Use /agents to pick one."
+            "No active agent selected. Use /focus to pick one."
         )
         return
 
@@ -117,12 +122,46 @@ async def clear_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         )
     if agent_name is None:
         await update.effective_message.reply_text(
-            "No active agent selected. Use /agents to pick one."
+            "No active agent selected. Use /focus to pick one."
         )
         return
 
     await update.effective_message.reply_text(
         f"Cleared all unread messages for {agent_name}."
+    )
+
+
+async def configure_unread_command(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+) -> None:
+    if not await _authorize_and_record_chat(update, context):
+        return
+
+    services = get_services(context)
+    message = update.effective_message
+    if message is None:
+        return
+
+    if not context.args:
+        session = await services.create_agent_service.state_repo.get_session(
+            services.settings.telegram_allowed_user_id
+        )
+        await message.reply_text(_build_unread_command_text(session.unselected_agent_unread_mode))
+        return
+
+    mode = _parse_unread_mode(context.args[0])
+    if mode is None:
+        await message.reply_text(_build_unread_command_text(None))
+        return
+
+    await services.create_agent_service.state_repo.set_unselected_agent_unread_mode(
+        services.settings.telegram_allowed_user_id,
+        mode,
+    )
+    await message.reply_text(
+        "Unread handling for unselected agents is now set to "
+        f"{_describe_unread_mode(mode)}."
     )
 
 
@@ -139,7 +178,7 @@ async def unfocus_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         return
 
     await update.effective_message.reply_text(
-        "Cleared the active agent selection. Use /agents to pick one again."
+        "Cleared the active agent selection. Use /focus to pick one again."
     )
 
 
@@ -177,6 +216,30 @@ async def stop_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     await update.effective_message.reply_text(f"Stopped {agent.name or agent.id}.")
 
 
+async def focus_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not await _authorize_and_record_chat(update, context):
+        return
+
+    services = get_services(context)
+    session = await services.create_agent_service.state_repo.get_session(
+        services.settings.telegram_allowed_user_id
+    )
+    message = update.effective_message
+    if message is None:
+        return
+
+    if session.thread_mode_enabled:
+        await message.reply_text(build_thread_mode_guidance())
+        return
+
+    items = await _list_agent_selection_items(context)
+    if not items:
+        await message.reply_text("No agents found.")
+        return
+
+    await message.reply_text("Select an agent:", reply_markup=render_agent_keyboard(items))
+
+
 async def agents_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not await _authorize_and_record_chat(update, context):
         return
@@ -189,23 +252,28 @@ async def agents_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await update.effective_message.reply_text("No agents found.")
         return
 
-    keyboard = render_agent_keyboard(
-        [
-            (
-                item.agent_id,
-                f"{'✅ ' if item.is_active else ''}{item.label}",
-            )
-            for item in items
-        ]
-    )
     session = await services.create_agent_service.state_repo.get_session(
         services.settings.telegram_allowed_user_id
     )
-    summary = format_command_list(
-        "Agents (tap to create/open a thread)" if session.thread_mode_enabled else "Agents",
-        [item.label for item in items],
-    )
-    await update.effective_message.reply_text(summary, reply_markup=keyboard)
+    if session.thread_mode_enabled:
+        keyboard = render_agent_keyboard(
+            [
+                (
+                    item.agent_id,
+                    item.label,
+                )
+                for item in items
+            ]
+        )
+        summary = format_command_list(
+            "Agents (tap to create/open a thread)",
+            [item.label for item in items],
+        )
+        await update.effective_message.reply_text(summary, reply_markup=keyboard)
+        return
+
+    summary = build_agents_summary_message(items)
+    await update.effective_message.reply_text(summary, parse_mode="HTML")
 
 
 async def new_agent_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -323,3 +391,59 @@ async def _authorize_and_record_chat(update: Update, context: ContextTypes.DEFAU
             update.effective_chat.id,
         )
     return True
+
+
+def _parse_unread_mode(value: str) -> UnselectedAgentUnreadMode | None:
+    normalized = value.strip().lower()
+    aliases = {
+        "full": UnselectedAgentUnreadMode.FULL,
+        "text": UnselectedAgentUnreadMode.FULL,
+        "count": UnselectedAgentUnreadMode.COUNT,
+        "number": UnselectedAgentUnreadMode.COUNT,
+        "none": UnselectedAgentUnreadMode.NONE,
+        "off": UnselectedAgentUnreadMode.NONE,
+        "hide": UnselectedAgentUnreadMode.NONE,
+    }
+    return aliases.get(normalized)
+
+
+def _describe_unread_mode(mode: UnselectedAgentUnreadMode) -> str:
+    descriptions = {
+        UnselectedAgentUnreadMode.FULL: "full text delivery",
+        UnselectedAgentUnreadMode.COUNT: "unread count notices",
+        UnselectedAgentUnreadMode.NONE: "no notifications",
+    }
+    return descriptions[mode]
+
+
+def _build_unread_command_text(
+    current_mode: UnselectedAgentUnreadMode | None,
+) -> str:
+    current = (
+        f"Current setting: {_describe_unread_mode(current_mode)}.\n\n"
+        if current_mode is not None
+        else ""
+    )
+    return (
+        f"{current}"
+        "Usage: /configure_unread <full|count|none>\n"
+        "• full — deliver unread messages from unselected agents in full.\n"
+        "• count — send only unread-count notices (default).\n"
+        "• none — send nothing until you switch to that agent."
+    )
+
+
+async def _list_agent_selection_items(
+    context: ContextTypes.DEFAULT_TYPE,
+) -> list[tuple[str, str]]:
+    services = get_services(context)
+    items = await services.agent_service.list_agents_with_unread_counts(
+        services.settings.telegram_allowed_user_id
+    )
+    return [
+        (
+            item.agent_id,
+            f"{'✅ ' if item.is_active else ''}{item.label}",
+        )
+        for item in items
+    ]

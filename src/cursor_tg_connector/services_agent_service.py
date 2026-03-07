@@ -7,7 +7,11 @@ from cursor_tg_connector.cursor_api_client import CursorApiClient
 from cursor_tg_connector.cursor_api_models import Agent, ConversationMessage
 from cursor_tg_connector.domain_types import AgentListItem
 from cursor_tg_connector.persistence_state_repo import StateRepository
-from cursor_tg_connector.utils_formatting import build_active_agent_message, build_agent_label
+from cursor_tg_connector.utils_formatting import (
+    build_active_agent_message,
+    build_agent_label,
+    shorten_repository_name,
+)
 
 
 @dataclass(slots=True)
@@ -38,15 +42,21 @@ class AgentService:
 
         items: list[AgentListItem] = []
         for snapshot in snapshots:
+            agent = snapshot.agent
+            unread_count = len(snapshot.unread_messages)
             items.append(
                 AgentListItem(
-                    agent_id=snapshot.agent.id,
-                    label=build_agent_label(snapshot.agent, len(snapshot.unread_messages)),
-                    unread_count=len(snapshot.unread_messages),
+                    agent_id=agent.id,
+                    name=agent.name.strip() or agent.id,
+                    status=agent.status,
+                    repository=shorten_repository_name(agent.source.repository),
+                    branch=agent.source.ref or "unknown-branch",
+                    label=build_agent_label(agent, unread_count),
+                    unread_count=unread_count,
                     is_active=(
                         False
                         if session.thread_mode_enabled
-                        else snapshot.agent.id == session.active_agent_id
+                        else agent.id == session.active_agent_id
                     ),
                 )
             )
@@ -77,7 +87,8 @@ class AgentService:
         agent = await self.cursor_client.get_agent(agent_id)
         if agent.status != "RUNNING":
             raise AgentStopError(
-                f"{agent.name or agent.id} is not running. Use /agents to open or select it."
+                f"{agent.name or agent.id} is not running. Use /focus to select it, "
+                "or /agents in threaded mode."
             )
 
         await self.cursor_client.stop_agent(agent.id)

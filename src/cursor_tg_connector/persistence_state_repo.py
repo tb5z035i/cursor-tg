@@ -4,7 +4,12 @@ import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from cursor_tg_connector.domain_types import AgentThreadBinding, SessionState, WizardStep
+from cursor_tg_connector.domain_types import (
+    AgentThreadBinding,
+    SessionState,
+    UnselectedAgentUnreadMode,
+    WizardStep,
+)
 from cursor_tg_connector.persistence_db import Database
 
 
@@ -38,6 +43,9 @@ class StateRepository:
             telegram_chat_id=row["telegram_chat_id"],
             active_agent_id=row["active_agent_id"],
             thread_mode_enabled=bool(row["thread_mode_enabled"]),
+            unselected_agent_unread_mode=UnselectedAgentUnreadMode(
+                row["unselected_agent_unread_mode"]
+            ),
             wizard_state=WizardStep(row["wizard_state"]),
             wizard_payload=json.loads(row["wizard_payload_json"] or "{}"),
             last_create_agent_at=row["last_create_agent_at"],
@@ -57,17 +65,19 @@ class StateRepository:
                     telegram_chat_id,
                     active_agent_id,
                     thread_mode_enabled,
+                    unselected_agent_unread_mode,
                     wizard_state,
                     wizard_payload_json,
                     last_create_agent_at,
                     created_at,
                     updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(telegram_user_id) DO UPDATE SET
                     telegram_chat_id = excluded.telegram_chat_id,
                     active_agent_id = excluded.active_agent_id,
                     thread_mode_enabled = excluded.thread_mode_enabled,
+                    unselected_agent_unread_mode = excluded.unselected_agent_unread_mode,
                     wizard_state = excluded.wizard_state,
                     wizard_payload_json = excluded.wizard_payload_json,
                     last_create_agent_at = excluded.last_create_agent_at,
@@ -78,6 +88,7 @@ class StateRepository:
                     session.telegram_chat_id,
                     session.active_agent_id,
                     int(session.thread_mode_enabled),
+                    session.unselected_agent_unread_mode.value,
                     session.wizard_state.value,
                     json.dumps(session.wizard_payload),
                     session.last_create_agent_at,
@@ -110,6 +121,16 @@ class StateRepository:
         session.thread_mode_enabled = enabled
         if enabled:
             session.active_agent_id = None
+        await self.upsert_session(session)
+        return session
+
+    async def set_unselected_agent_unread_mode(
+        self,
+        telegram_user_id: int,
+        mode: UnselectedAgentUnreadMode,
+    ) -> SessionState:
+        session = await self.get_session(telegram_user_id)
+        session.unselected_agent_unread_mode = mode
         await self.upsert_session(session)
         return session
 

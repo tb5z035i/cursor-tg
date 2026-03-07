@@ -57,7 +57,7 @@ class FollowupService:
                     "Thread mode is on. Use /agents in the root chat to open an "
                     "agent thread, then send the follow-up there."
                 )
-            raise FollowupError("No active agent selected. Use /agents first.")
+            raise FollowupError("No active agent selected. Use /focus first.")
 
         self.active_followups.add(agent_id)
         try:

@@ -48,9 +48,9 @@ You only need this if you want the bot to mark PRs ready for review or merge the
 1. Open GitHub → **Settings** → **Developer settings** → **Personal access tokens** → [**Fine-grained tokens**](https://github.com/settings/personal-access-tokens).
 2. Click [**Generate new token**](https://github.com/settings/personal-access-tokens/new).
 3. Restrict it to the repository (or org repositories) the Cursor agent works on.
-4. Grant at least:
-   - **Pull requests: Read and write**
-   - **Contents: Write**
+4. Under **Repository permissions**, grant at least:
+   - **Pull requests: Read and write** for PR status reads and the `/ready` action
+   - **Contents: Read and write** for the `/merge` action
 5. Copy the token and use it as `GITHUB_TOKEN` (or `GITHUB_PAT`).
 
 **Classic PAT (alternative):**
@@ -177,8 +177,8 @@ When `GITHUB_TOKEN` (or `GITHUB_PAT`) is set:
 Recommended GitHub token choices:
 
 - **Fine-grained PAT** scoped to the target repository, with at least:
-  - **Pull requests: Read and write**
-  - **Contents: Write** (needed for merging)
+  - **Pull requests: Read and write** for PR status reads and ready-for-review actions
+  - **Contents: Read and write** (needed for merging)
 - **Classic PAT** with `repo` scope also works.
 
 If no GitHub token is configured, the bot still shows the PR link, but PR state changes remain read-only.

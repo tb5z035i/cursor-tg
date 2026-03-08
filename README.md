@@ -204,6 +204,16 @@ docker run -d \
 - Keep to a **single replica** — SQLite is local and not shared.
 - Store credentials as environment variables or container secrets.
 
+## Docker image releases
+
+Pushing a new Git tag whose commit is reachable from `main` triggers GitHub Actions to build and
+publish the Docker image to Docker Hub as:
+
+- `DOCKER_HUB_USER/cursor-tg-connector:<tag>`
+- `DOCKER_HUB_USER/cursor-tg-connector:latest`
+
+The workflow uses the `DOCKER_HUB_USER` and `DOCKER_HUB_PAT` GitHub secrets for authentication.
+
 ## Architecture
 
 ```

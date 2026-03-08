@@ -22,3 +22,20 @@ See `README.md` for canonical setup. Quick reference:
 - `pytest` is configured with `asyncio_mode = "auto"` in `pyproject.toml`, so all async test functions run automatically without explicit `@pytest.mark.asyncio`.
 - The venv must be activated before running any commands: `source .venv/bin/activate`.
 - System dependency `python3.12-venv` is required on Ubuntu if not already present (`sudo apt-get install -y python3.12-venv`).
+
+### Running with Cursor Cloud secrets
+
+The injected secret names differ from what the app expects. Map them when launching:
+
+```bash
+TELEGRAM_ALLOWED_USER_ID="$TELEGRAM_USER_ID" \
+CURSOR_API_KEY="$CURSOR_CLOUD_AGENT_API" \
+SQLITE_PATH="/tmp/connector.db" \
+python -m cursor_tg_connector
+```
+
+| App env var | Injected secret name |
+|---|---|
+| `TELEGRAM_BOT_TOKEN` | `TELEGRAM_BOT_TOKEN` (same) |
+| `TELEGRAM_ALLOWED_USER_ID` | `TELEGRAM_USER_ID` |
+| `CURSOR_API_KEY` | `CURSOR_CLOUD_AGENT_API` |

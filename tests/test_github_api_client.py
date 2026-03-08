@@ -50,6 +50,31 @@ async def test_get_pull_request_fetches_pr_details() -> None:
 
 
 @pytest.mark.asyncio
+async def test_get_pull_request_diff_fetches_raw_diff_text() -> None:
+    async with httpx.AsyncClient(base_url="https://api.github.com") as http_client:
+        client = GitHubApiClient(
+            token="github-token",
+            base_url="https://api.github.com",
+            http_client=http_client,
+        )
+
+        with respx.mock(assert_all_called=True) as router:
+            route = router.get("https://api.github.com/repos/acme/repo/pulls/123").mock(
+                return_value=httpx.Response(
+                    200,
+                    text="diff --git a/app.py b/app.py\n+print('hi')\n",
+                )
+            )
+
+            diff_text = await client.get_pull_request_diff(
+                "https://github.com/acme/repo/pull/123"
+            )
+
+    assert diff_text == "diff --git a/app.py b/app.py\n+print('hi')\n"
+    assert route.calls[0].request.headers["Accept"] == "application/vnd.github.diff"
+
+
+@pytest.mark.asyncio
 async def test_merge_pull_request_surfaces_github_error_message() -> None:
     async with httpx.AsyncClient(base_url="https://api.github.com") as http_client:
         client = GitHubApiClient(

@@ -26,6 +26,13 @@ class PullRequestService:
         pr_url = self._require_pr_url(agent)
         return await github_client.get_pull_request(pr_url)
 
+    async def get_pull_request_diff(self, agent: Agent) -> tuple[GitHubPullRequest, str]:
+        github_client = self._require_client()
+        pr_url = self._require_pr_url(agent)
+        pull_request = await github_client.get_pull_request(pr_url)
+        diff_text = await github_client.get_pull_request_diff(pr_url)
+        return pull_request, diff_text
+
     async def mark_ready_for_review(self, agent: Agent) -> GitHubPullRequest:
         github_client = self._require_client()
         pr_url = self._require_pr_url(agent)
@@ -59,8 +66,8 @@ class PullRequestService:
     def _require_client(self) -> GitHubApiClient:
         if self.github_client is None:
             raise PullRequestActionError(
-                "PR actions are unavailable. Set GITHUB_TOKEN (or GITHUB_PAT) to enable "
-                "ready-for-review and merge actions."
+                "GitHub PR integration is unavailable. Set GITHUB_TOKEN (or GITHUB_PAT) "
+                "to enable PR inspection, diff, ready-for-review, and merge actions."
             )
         return self.github_client
 

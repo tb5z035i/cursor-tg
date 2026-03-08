@@ -21,7 +21,7 @@ A single-process Python service that bridges a Telegram bot with the [Cursor Clo
 | **Telegram Bot Token** | Create a bot via [@BotFather](https://t.me/BotFather) on Telegram (see [step-by-step below](#1-create-a-telegram-bot)) |
 | **Your Telegram User ID** | Send `/start` to [@userinfobot](https://t.me/userinfobot) — the numeric ID it returns is your user ID |
 | **Cursor API Key** | Generate one at [Cursor Dashboard → My User API Keys](https://cursor.com/cn/dashboard?tab=cloud-agents#my-user-api-keys) |
-| **GitHub token** *(optional)* | Create one in [GitHub fine-grained PAT settings](https://github.com/settings/personal-access-tokens/new) if you want Telegram to mark PRs ready for review or merge them |
+| **GitHub token** *(optional)* | Create one in [GitHub fine-grained PAT settings](https://github.com/settings/personal-access-tokens/new) if you want Telegram to inspect PR diffs, mark PRs ready for review, or merge them |
 
 ### 1. Create a Telegram bot
 
@@ -41,7 +41,7 @@ Send `/start` to [@userinfobot](https://t.me/userinfobot). It replies with your 
 
 ### 4. Create an optional GitHub token for PR actions
 
-You only need this if you want the bot to mark PRs ready for review or merge them from Telegram.
+You only need this if you want the bot to inspect PR diffs, mark PRs ready for review, or merge them from Telegram.
 
 **Fine-grained PAT (recommended):**
 
@@ -130,6 +130,7 @@ The SQLite database defaults to `/data/connector.db`. Mount `/data` to persisten
 | `/threadmode` | Show status or toggle per-agent Telegram thread routing with `/threadmode on|off|status` (requires bot-level Threaded Mode in @BotFather) |
 | `/newagent` | Create a new agent with a 4-step wizard (model → repo → branch → prompt) |
 | `/pr` | Show the active agent PR status and action buttons |
+| `/diff` | Show the active agent PR diff in a Telegram code block |
 | `/ready` | Mark the active agent PR ready for review |
 | `/merge` | Merge the active agent PR (or `/merge merge|squash|rebase`) |
 | `/cancel` | Abort the in-progress `/newagent` wizard |
@@ -145,7 +146,7 @@ Any other text message is forwarded as a follow-up to the active agent. When thr
 | `TELEGRAM_BOT_TOKEN` | *required* | Bot token from @BotFather |
 | `TELEGRAM_ALLOWED_USER_ID` | *required* | Your Telegram numeric user ID |
 | `CURSOR_API_KEY` | *required* | Cursor Cloud API key |
-| `GITHUB_TOKEN` / `GITHUB_PAT` | optional | GitHub token used for PR actions (`/pr`, `/ready`, `/merge`) |
+| `GITHUB_TOKEN` / `GITHUB_PAT` | optional | GitHub token used for PR inspection and actions (`/pr`, `/diff`, `/ready`, `/merge`) |
 | `GITHUB_API_BASE_URL` | `https://api.github.com` | GitHub API base URL |
 | `GITHUB_DEFAULT_MERGE_METHOD` | `merge` | Merge method used by the inline merge button (`merge`, `squash`, or `rebase`) |
 | `TELEGRAM_CHAT_ID` | auto-detected | Override the chat ID; normally discovered from your first message to the bot |
@@ -167,6 +168,7 @@ Cursor's public Cloud Agent API currently exposes the PR URL (`target.prUrl`), b
 When `GITHUB_TOKEN` (or `GITHUB_PAT`) is set:
 
 - `/current` and `/pr` show the latest GitHub PR status.
+- `/diff` shows the current PR diff in Telegram code blocks.
 - `/pr` adds inline buttons for:
   - **Ready for review** (only while the PR is still draft)
   - **Merge (`GITHUB_DEFAULT_MERGE_METHOD`)**

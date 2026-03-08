@@ -31,6 +31,7 @@ from cursor_tg_connector.utils_formatting import (
     build_active_agent_message,
     build_agent_info_message,
     build_agents_summary_message,
+    build_pull_request_diff_messages,
     build_reset_db_prompt,
     build_thread_command_guidance,
     build_thread_mode_guidance,
@@ -58,6 +59,7 @@ _HELP_TEXT = (
     "• Send /threadmode on to route each agent into its own Telegram thread.\n"
     "• Send /newagent to create a new agent (model → repo → branch → prompt).\n"
     "• Send /pr to inspect the current agent pull request and use action buttons.\n"
+    "• Send /diff to show the current agent pull request diff in a code block.\n"
     "• Send /ready to mark the current agent pull request ready for review.\n"
     "• Send /merge [merge|squash|rebase] to merge the current agent pull request.\n"
     "• Send any text message to follow up with the active agent or from inside an agent thread.\n"
@@ -75,8 +77,8 @@ _STOP_HELP_TEXT = (
 )
 
 _PR_ACTIONS_DISABLED_TEXT = (
-    "PR actions are unavailable. Set GITHUB_TOKEN (or GITHUB_PAT) to enable ready-for-review "
-    "and merge actions."
+    "GitHub PR integration is unavailable. Set GITHUB_TOKEN (or GITHUB_PAT) to enable PR "
+    "inspection, diff, ready-for-review, and merge actions."
 )
 
 _MERGE_USAGE_TEXT = "Usage: /merge [merge|squash|rebase]"
@@ -454,6 +456,34 @@ async def pr_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         return
 
     await _reply_with_agent_overview(update, context, agent, include_disabled_hint=True)
+
+
+async def diff_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not await _authorize_and_record_chat(update, context):
+        return
+
+    agent = await _resolve_context_agent(update, context)
+    if agent is None:
+        return
+
+    services = get_services(context)
+    pull_request_service = getattr(services, "pull_request_service", None)
+    if pull_request_service is None:
+        await update.effective_message.reply_text(_PR_ACTIONS_DISABLED_TEXT)
+        return
+
+    try:
+        pull_request, diff_text = await pull_request_service.get_pull_request_diff(agent)
+    except (PullRequestActionError, GitHubApiError) as exc:
+        await update.effective_message.reply_text(str(exc))
+        return
+
+    message = update.effective_message
+    if message is None:
+        return
+
+    for diff_message in build_pull_request_diff_messages(pull_request, diff_text):
+        await message.reply_text(diff_message, parse_mode="HTML")
 
 
 async def ready_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

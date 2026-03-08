@@ -13,6 +13,7 @@ from cursor_tg_connector.telegram_bot_commands import (
     agents_command,
     close_command,
     current_command,
+    diff_command,
     help_command,
     history_command,
     merge_command,
@@ -124,12 +125,18 @@ class FakePullRequestService:
         self.enabled = enabled
         self.state = state
         self.draft = draft
+        self.diff_text = "diff --git a/app.py b/app.py\n+print('hello')\n"
+        self.diff_calls: list[str] = []
         self.ready_calls: list[str] = []
         self.merge_calls: list[tuple[str, str]] = []
         self.pull_request = self._build_pull_request(state=state, draft=draft, merged=False)
 
     async def get_pull_request(self, agent: Agent) -> GitHubPullRequest:
         return self.pull_request
+
+    async def get_pull_request_diff(self, agent: Agent) -> tuple[GitHubPullRequest, str]:
+        self.diff_calls.append(agent.id)
+        return self.pull_request, self.diff_text
 
     async def mark_ready_for_review(self, agent: Agent) -> GitHubPullRequest:
         self.ready_calls.append(agent.id)
@@ -952,6 +959,65 @@ async def test_pr_command_explains_when_github_actions_are_not_configured(
     await state_repo.set_active_agent(settings.telegram_allowed_user_id, "agent-1")
 
     await pr_command(
+        update,
+        build_context(settings=settings, state_repo=state_repo, agent_service=agent_service),
+    )
+
+    assert "Set GITHUB_TOKEN (or GITHUB_PAT)" in message.replies[0][0]
+
+
+@pytest.mark.asyncio
+async def test_diff_command_renders_pull_request_diff_in_code_block(
+    settings,
+    state_repo,
+) -> None:
+    message = FakeMessage()
+    update = SimpleNamespace(
+        effective_user=SimpleNamespace(id=settings.telegram_allowed_user_id),
+        effective_message=message,
+        effective_chat=SimpleNamespace(id=999),
+    )
+    client = FakeCursorClient()
+    agent_service = AgentService(client, state_repo)
+    pull_request_service = FakePullRequestService()
+    pull_request_service.diff_text = "diff --git a/app.py b/app.py\n+print('<tag>&more')\n"
+    await state_repo.set_active_agent(settings.telegram_allowed_user_id, "agent-1")
+
+    await diff_command(
+        update,
+        build_context(
+            settings=settings,
+            state_repo=state_repo,
+            agent_service=agent_service,
+            pull_request_service=pull_request_service,
+        ),
+    )
+
+    assert pull_request_service.diff_calls == ["agent-1"]
+    assert len(message.replies) == 1
+    text, kwargs = message.replies[0]
+    assert kwargs["parse_mode"] == "HTML"
+    assert 'PR diff for <a href="https://github.com/acme/repo-a/pull/123">#123</a>' in text
+    assert "<pre>diff --git a/app.py b/app.py" in text
+    assert "&lt;tag&gt;&amp;more" in text
+
+
+@pytest.mark.asyncio
+async def test_diff_command_explains_when_github_actions_are_not_configured(
+    settings,
+    state_repo,
+) -> None:
+    message = FakeMessage()
+    update = SimpleNamespace(
+        effective_user=SimpleNamespace(id=settings.telegram_allowed_user_id),
+        effective_message=message,
+        effective_chat=SimpleNamespace(id=999),
+    )
+    client = FakeCursorClient()
+    agent_service = AgentService(client, state_repo)
+    await state_repo.set_active_agent(settings.telegram_allowed_user_id, "agent-1")
+
+    await diff_command(
         update,
         build_context(settings=settings, state_repo=state_repo, agent_service=agent_service),
     )

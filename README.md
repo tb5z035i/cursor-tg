@@ -127,7 +127,7 @@ The SQLite database defaults to `/data/connector.db`. Mount `/data` to persisten
 | `/stop` | Stop the currently selected running agent and clear the active selection |
 | `/clear` | Mark all unread messages as read for the active agent |
 | `/close` | Close the current bound Telegram thread/topic in threaded mode without deleting the Cursor agent |
-| `/threadmode` | Show status or toggle per-agent Telegram thread routing with `/threadmode on|off|status` (requires Topics enabled and user-created topics disabled) |
+| `/threadmode` | Show status or toggle per-agent Telegram thread routing with `/threadmode on|off|status` (requires bot-level Threaded Mode in @BotFather) |
 | `/newagent` | Create a new agent with a 4-step wizard (model → repo → branch → prompt) |
 | `/pr` | Show the active agent PR status and action buttons |
 | `/ready` | Mark the active agent PR ready for review |
@@ -201,12 +201,8 @@ If no GitHub token is configured, the bot still shows the PR link, but PR state 
 
 Use `/threadmode on` if you want one Telegram thread/topic per Cursor agent.
 
-`/threadmode on` is only allowed when all of these are true:
-
-- The chat is a Telegram supergroup.
-- Topics are enabled for that supergroup.
-- The chat-level setting **Disallow users to create new threads** is enabled.
-- The bot is an admin with the **Manage Topics** permission.
+`/threadmode on` is allowed when the bot itself has **Threaded Mode** enabled in
+[@BotFather](https://t.me/BotFather) (Telegram `getMe.has_topics_enabled = true`).
 
 - In threaded mode, `/agents` becomes the button-based thread opener for agents.
 - `/focus` remains the non-thread-mode active-agent picker.

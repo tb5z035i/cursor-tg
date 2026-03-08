@@ -114,25 +114,25 @@ def build_agent_info_message(
     target_branch = agent.target.branch_name or "—"
     pr_url = agent.target.pr_url or "—"
     lines = [
-        f"> **{agent.name or agent.id}**",
-        f"Status: {agent.status}",
-        f"Repository: {repo_name}",
-        f"Base branch: {agent.source.ref or 'unknown'}",
-        f"Working branch: {target_branch}",
-        f"PR: {pr_url}",
-        f"URL: {agent.target.url}",
+        f"<blockquote><b>{html.escape(agent.name or agent.id)}</b></blockquote>",
+        f"Status: {html.escape(agent.status)}",
+        f"Repository: {html.escape(repo_name)}",
+        f"Base branch: {html.escape(agent.source.ref or 'unknown')}",
+        f"Working branch: {html.escape(target_branch)}",
+        f"PR: {_html_link_or_text(agent.target.pr_url, pr_url)}",
+        f"URL: {_html_link_or_text(agent.target.url, agent.target.url)}",
     ]
     if pull_request is not None:
         lines.extend(
             [
-                f"PR status: {describe_pull_request_state(pull_request)}",
-                f"PR title: {pull_request.title}",
+                f"PR status: {html.escape(describe_pull_request_state(pull_request))}",
+                f"PR title: {html.escape(pull_request.title)}",
             ]
         )
         if pull_request.mergeable_state:
-            lines.append(f"PR mergeability: {pull_request.mergeable_state}")
+            lines.append(f"PR mergeability: {html.escape(pull_request.mergeable_state)}")
     if agent.summary:
-        lines.append(f"\n{agent.summary}")
+        lines.append(f"\n{markdown_to_telegram_html(agent.summary)}")
     return "\n".join(lines)
 
 
@@ -321,3 +321,11 @@ def _truncate_table_cell(value: str, width: int) -> str:
     if width <= 3:
         return value[:width]
     return f"{value[: width - 3]}..."
+
+
+def _html_link_or_text(url: str | None, fallback_text: str) -> str:
+    if not url:
+        return html.escape(fallback_text)
+    escaped_url = html.escape(url, quote=True)
+    escaped_label = html.escape(fallback_text)
+    return f'<a href="{escaped_url}">{escaped_label}</a>'

@@ -6,6 +6,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import ContextTypes
 
 from cursor_tg_connector.config import Settings
+from cursor_tg_connector.domain_types import UnselectedAgentUnreadMode
 from cursor_tg_connector.github_api_models import GitHubMergeMethod, GitHubPullRequest
 from cursor_tg_connector.persistence_db import Database
 from cursor_tg_connector.services_agent_service import AgentService
@@ -26,6 +27,8 @@ from cursor_tg_connector.telegram_bot_constants import (
     RESET_DB_CANCEL_PREFIX,
     RESET_DB_CONFIRM_PREFIX,
     SWITCH_AGENT_PREFIX,
+    THREAD_MODE_PREFIX,
+    UNREAD_MODE_PREFIX,
 )
 
 BOT_COMMANDS: list[tuple[str, str]] = [
@@ -129,6 +132,49 @@ def render_agent_keyboard(items: list[tuple[str, str]]) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(rows)
 
 
+def render_unread_mode_keyboard(
+    current_mode: UnselectedAgentUnreadMode,
+) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(
+                    _selected_option_label("Full", current_mode == UnselectedAgentUnreadMode.FULL),
+                    callback_data=f"{UNREAD_MODE_PREFIX}{UnselectedAgentUnreadMode.FULL.value}",
+                ),
+                InlineKeyboardButton(
+                    _selected_option_label(
+                        "Count",
+                        current_mode == UnselectedAgentUnreadMode.COUNT,
+                    ),
+                    callback_data=f"{UNREAD_MODE_PREFIX}{UnselectedAgentUnreadMode.COUNT.value}",
+                ),
+                InlineKeyboardButton(
+                    _selected_option_label("None", current_mode == UnselectedAgentUnreadMode.NONE),
+                    callback_data=f"{UNREAD_MODE_PREFIX}{UnselectedAgentUnreadMode.NONE.value}",
+                ),
+            ]
+        ]
+    )
+
+
+def render_thread_mode_keyboard(enabled: bool) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(
+                    _selected_option_label("On", enabled),
+                    callback_data=f"{THREAD_MODE_PREFIX}on",
+                ),
+                InlineKeyboardButton(
+                    _selected_option_label("Off", not enabled),
+                    callback_data=f"{THREAD_MODE_PREFIX}off",
+                ),
+            ]
+        ]
+    )
+
+
 def render_reset_db_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
@@ -189,3 +235,7 @@ def _pagination_rows(page: int, total_pages: int, prefix: str) -> list[list[Inli
     if page < total_pages - 1:
         buttons.append(InlineKeyboardButton("Next ▶️", callback_data=f"{prefix}{page + 1}"))
     return [buttons]
+
+
+def _selected_option_label(label: str, selected: bool) -> str:
+    return f"✓ {label}" if selected else label

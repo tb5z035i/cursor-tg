@@ -15,6 +15,8 @@ from cursor_tg_connector.telegram_bot_common import (
     RESET_DB_CANCEL_PREFIX,
     RESET_DB_CONFIRM_PREFIX,
     SWITCH_AGENT_PREFIX,
+    THREAD_MODE_PREFIX,
+    UNREAD_MODE_PREFIX,
 )
 
 
@@ -22,6 +24,7 @@ class FakeBot:
     def __init__(self) -> None:
         self.created_topics: list[tuple[int, str]] = []
         self.messages: list[tuple[int, int | None, str]] = []
+        self.has_topics_enabled = True
 
     async def create_forum_topic(self, chat_id: int, name: str):
         self.created_topics.append((chat_id, name))
@@ -40,6 +43,9 @@ class FakeBot:
 
     async def send_chat_action(self, **kwargs) -> None:
         return None
+
+    async def get_me(self):
+        return SimpleNamespace(id=4321, has_topics_enabled=self.has_topics_enabled)
 
 
 class FakeCursorClient:
@@ -83,13 +89,15 @@ class FakeCallbackQuery:
         self.data = data
         self.answers: list[tuple[str | None, bool]] = []
         self.edits: list[str] = []
+        self.edit_kwargs: list[dict[str, object]] = []
         self.message = SimpleNamespace(message_thread_id=message_thread_id)
 
     async def answer(self, text: str | None = None, show_alert: bool = False) -> None:
         self.answers.append((text, show_alert))
 
-    async def edit_message_text(self, text: str, **_: object) -> None:
+    async def edit_message_text(self, text: str, **kwargs: object) -> None:
         self.edits.append(text)
+        self.edit_kwargs.append(dict(kwargs))
 
     async def edit_message_reply_markup(self, **_: object) -> None:
         return None
@@ -262,6 +270,62 @@ async def test_switch_agent_callback_creates_thread_in_thread_mode(settings, sta
 
 
 @pytest.mark.asyncio
+async def test_unread_mode_callback_updates_session_and_keyboard(settings, state_repo) -> None:
+    query = FakeCallbackQuery(f"{UNREAD_MODE_PREFIX}full")
+    update = SimpleNamespace(
+        effective_user=SimpleNamespace(id=settings.telegram_allowed_user_id),
+        effective_chat=SimpleNamespace(id=999),
+        callback_query=query,
+    )
+
+    await callback_router(
+        update,
+        build_context(
+            settings=settings,
+            state_repo=state_repo,
+            bot=FakeBot(),
+            agent_service=AgentService(FakeCursorClient(), state_repo),
+        ),
+    )
+
+    session = await state_repo.get_session(settings.telegram_allowed_user_id)
+    assert session.unselected_agent_unread_mode == "full"
+    assert query.answers[-1] == ("Unread mode updated", False)
+    assert "Current setting: full text delivery." in query.edits[-1]
+    markup = query.edit_kwargs[-1]["reply_markup"]
+    assert markup is not None
+    assert [button.text for button in markup.inline_keyboard[0]] == ["✓ Full", "Count", "None"]
+
+
+@pytest.mark.asyncio
+async def test_thread_mode_callback_updates_session_and_keyboard(settings, state_repo) -> None:
+    query = FakeCallbackQuery(f"{THREAD_MODE_PREFIX}on")
+    update = SimpleNamespace(
+        effective_user=SimpleNamespace(id=settings.telegram_allowed_user_id),
+        effective_chat=SimpleNamespace(id=999),
+        callback_query=query,
+    )
+
+    await callback_router(
+        update,
+        build_context(
+            settings=settings,
+            state_repo=state_repo,
+            bot=FakeBot(),
+            agent_service=AgentService(FakeCursorClient(), state_repo),
+        ),
+    )
+
+    session = await state_repo.get_session(settings.telegram_allowed_user_id)
+    assert session.thread_mode_enabled is True
+    assert query.answers[-1] == ("Thread mode updated", False)
+    assert "Thread mode is now enabled." in query.edits[-1]
+    markup = query.edit_kwargs[-1]["reply_markup"]
+    assert markup is not None
+    assert [button.text for button in markup.inline_keyboard[0]] == ["✓ On", "Off"]
+
+
+@pytest.mark.asyncio
 async def test_ready_pr_callback_updates_message_with_new_pr_state(settings, state_repo) -> None:
     query = FakeCallbackQuery(f"{PR_READY_PREFIX}agent-1")
     update = SimpleNamespace(
@@ -285,6 +349,7 @@ async def test_ready_pr_callback_updates_message_with_new_pr_state(settings, sta
     assert pull_request_service.ready_calls == ["agent-1"]
     assert query.answers[-1] == ("Marked ready for review", False)
     assert "PR status: ready for review" in query.edits[-1]
+    assert query.edit_kwargs[-1]["parse_mode"] == "HTML"
 
 
 @pytest.mark.asyncio
@@ -312,3 +377,4 @@ async def test_merge_pr_callback_updates_message_after_merge(settings, state_rep
     assert pull_request_service.merge_calls == [("agent-1", "squash")]
     assert query.answers[-1] == ("Pull request merged", False)
     assert "PR status: merged" in query.edits[-1]
+    assert query.edit_kwargs[-1]["parse_mode"] == "HTML"

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import html
+
 from telegram import Update
 from telegram.error import TelegramError
 from telegram.ext import ContextTypes
@@ -21,6 +23,8 @@ from cursor_tg_connector.telegram_bot_common import (
     render_model_keyboard,
     render_pull_request_keyboard,
     render_reset_db_keyboard,
+    render_thread_mode_keyboard,
+    render_unread_mode_keyboard,
 )
 from cursor_tg_connector.telegram_threads import close_agent_thread
 from cursor_tg_connector.utils_formatting import (
@@ -249,25 +253,36 @@ async def configure_unread_command(
     if message is None:
         return
 
+    session = await services.create_agent_service.state_repo.get_session(
+        services.settings.telegram_allowed_user_id
+    )
     if not context.args:
-        session = await services.create_agent_service.state_repo.get_session(
-            services.settings.telegram_allowed_user_id
+        await _reply_with_unread_configuration(
+            message,
+            session.unselected_agent_unread_mode,
         )
-        await message.reply_text(_build_unread_command_text(session.unselected_agent_unread_mode))
         return
 
     mode = _parse_unread_mode(context.args[0])
     if mode is None:
-        await message.reply_text(_build_unread_command_text(None))
+        await _reply_with_unread_configuration(
+            message,
+            session.unselected_agent_unread_mode,
+            intro="Unknown unread mode. Choose one below or use /configure_unread full|count|none.",
+        )
         return
 
     await services.create_agent_service.state_repo.set_unselected_agent_unread_mode(
         services.settings.telegram_allowed_user_id,
         mode,
     )
-    await message.reply_text(
-        "Unread handling for unselected agents is now set to "
-        f"{_describe_unread_mode(mode)}."
+    await _reply_with_unread_configuration(
+        message,
+        mode,
+        intro=(
+            "Unread handling for unselected agents is now set to "
+            f"{_describe_unread_mode(mode)}."
+        ),
     )
 
 
@@ -515,6 +530,10 @@ async def threadmode_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if not await _authorize_and_record_chat(update, context):
         return
 
+    message = update.effective_message
+    if message is None:
+        return
+
     services = get_services(context)
     args = [arg.lower() for arg in getattr(context, "args", [])]
     current = await services.create_agent_service.state_repo.get_session(
@@ -522,37 +541,35 @@ async def threadmode_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
     )
 
     if not args or args[0] == "status":
-        await update.effective_message.reply_text(
-            build_thread_mode_status(current.thread_mode_enabled)
+        await _reply_with_thread_mode_configuration(
+            message,
+            current.thread_mode_enabled,
         )
         return
 
     if args[0] == "on":
-        prerequisite_error = await _get_thread_mode_prerequisite_error(update, context)
-        if prerequisite_error is not None:
-            await update.effective_message.reply_text(prerequisite_error)
-            return
-        updated = await services.create_agent_service.state_repo.set_thread_mode_enabled(
-            services.settings.telegram_allowed_user_id,
-            True,
-        )
-        await update.effective_message.reply_text(
-            build_thread_mode_status(updated.thread_mode_enabled)
+        text, enabled = await _set_thread_mode_enabled(update, context, True)
+        await _reply_with_thread_mode_configuration(
+            message,
+            enabled,
+            intro=text,
         )
         return
 
     if args[0] == "off":
-        updated = await services.create_agent_service.state_repo.set_thread_mode_enabled(
-            services.settings.telegram_allowed_user_id,
-            False,
-        )
-        await update.effective_message.reply_text(
-            build_thread_mode_status(updated.thread_mode_enabled)
-            + "\n\nExisting thread bindings were preserved."
+        text, enabled = await _set_thread_mode_enabled(update, context, False)
+        await _reply_with_thread_mode_configuration(
+            message,
+            enabled,
+            intro=text,
         )
         return
 
-    await update.effective_message.reply_text("Usage: /threadmode [on|off|status]")
+    await _reply_with_thread_mode_configuration(
+        message,
+        current.thread_mode_enabled,
+        intro="Unknown thread mode option. Choose one below or use /threadmode on|off|status.",
+    )
 
 
 async def resetdb_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -581,8 +598,8 @@ async def _reply_with_agent_overview(
         services = get_services(context)
         pull_request_service = getattr(services, "pull_request_service", None)
         if pull_request_service is None or not pull_request_service.enabled:
-            text = f"{text}\n\n{_PR_ACTIONS_DISABLED_TEXT}"
-    await message.reply_text(text, reply_markup=reply_markup)
+            text = f"{text}\n\n{html.escape(_PR_ACTIONS_DISABLED_TEXT)}"
+    await message.reply_text(text, reply_markup=reply_markup, parse_mode="HTML")
 
 
 async def _build_agent_overview(
@@ -714,19 +731,79 @@ def _describe_unread_mode(mode: UnselectedAgentUnreadMode) -> str:
 
 def _build_unread_command_text(
     current_mode: UnselectedAgentUnreadMode | None,
+    intro: str | None = None,
 ) -> str:
-    current = (
-        f"Current setting: {_describe_unread_mode(current_mode)}.\n\n"
-        if current_mode is not None
-        else ""
-    )
-    return (
-        f"{current}"
-        "Usage: /configure_unread <full|count|none>\n"
+    sections: list[str] = []
+    if intro:
+        sections.append(intro)
+    if current_mode is not None:
+        sections.append(f"Current setting: {_describe_unread_mode(current_mode)}.")
+    sections.append(
+        "Choose how unread messages from unselected agents are delivered.\n"
         "• full — deliver unread messages from unselected agents in full.\n"
         "• count — send only unread-count notices (default).\n"
         "• none — send nothing until you switch to that agent."
     )
+    return "\n\n".join(sections)
+
+
+def _build_thread_mode_command_text(enabled: bool, intro: str | None = None) -> str:
+    sections = [intro] if intro else []
+    sections.append(build_thread_mode_status(enabled))
+    sections.append("Choose the routing mode below.")
+    return "\n\n".join(sections)
+
+
+async def _reply_with_unread_configuration(
+    message,
+    current_mode: UnselectedAgentUnreadMode,
+    *,
+    intro: str | None = None,
+) -> None:
+    await message.reply_text(
+        _build_unread_command_text(current_mode, intro=intro),
+        reply_markup=render_unread_mode_keyboard(current_mode),
+    )
+
+
+async def _reply_with_thread_mode_configuration(
+    message,
+    enabled: bool,
+    *,
+    intro: str | None = None,
+) -> None:
+    await message.reply_text(
+        _build_thread_mode_command_text(enabled, intro=intro),
+        reply_markup=render_thread_mode_keyboard(enabled),
+    )
+
+
+async def _set_thread_mode_enabled(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    enabled: bool,
+) -> tuple[str, bool]:
+    services = get_services(context)
+    current = await services.create_agent_service.state_repo.get_session(
+        services.settings.telegram_allowed_user_id
+    )
+    if current.thread_mode_enabled == enabled:
+        status = "enabled" if enabled else "disabled"
+        return f"Thread mode is already {status}.", enabled
+
+    if enabled:
+        prerequisite_error = await _get_thread_mode_prerequisite_error(update, context)
+        if prerequisite_error is not None:
+            return prerequisite_error, current.thread_mode_enabled
+
+    updated = await services.create_agent_service.state_repo.set_thread_mode_enabled(
+        services.settings.telegram_allowed_user_id,
+        enabled,
+    )
+    text = f"Thread mode is now {'enabled' if enabled else 'disabled'}."
+    if not enabled:
+        text = f"{text}\n\nExisting thread bindings were preserved."
+    return text, updated.thread_mode_enabled
 
 
 def _parse_merge_method(value: str) -> GitHubMergeMethod | None:

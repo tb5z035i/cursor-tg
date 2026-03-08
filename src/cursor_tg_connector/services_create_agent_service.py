@@ -246,10 +246,16 @@ class CreateAgentService:
     async def _silence_agent(self, agent_id: str) -> None:
         try:
             conversation = await self.cursor_client.get_conversation(agent_id)
-            total = sum(
-                1 for message in conversation.messages if message.type == "assistant_message"
+            assistant_messages = [
+                message for message in conversation.messages if message.type == "assistant_message"
+            ]
+            last_message = assistant_messages[-1] if assistant_messages else None
+            await self.state_repo.set_delivery_state(
+                agent_id,
+                len(assistant_messages),
+                last_message_id=last_message.id if last_message else None,
+                last_message_text_length=len(last_message.text) if last_message else 0,
             )
-            await self.state_repo.set_delivery_cursor(agent_id, total)
         except Exception:
             logger.warning(
                 "Failed to silence unread state for previous active agent %s",

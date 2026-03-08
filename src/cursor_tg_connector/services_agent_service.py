@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
+from typing import Protocol
 
 from cursor_tg_connector.cursor_api_client import CursorApiClient
 from cursor_tg_connector.cursor_api_models import Agent, ConversationMessage
 from cursor_tg_connector.domain_types import AgentListItem
-from cursor_tg_connector.persistence_state_repo import StateRepository
+from cursor_tg_connector.persistence_state_repo import DeliveryCursorState, StateRepository
 from cursor_tg_connector.utils_formatting import (
     build_active_agent_message,
     build_agent_label,
@@ -17,8 +18,66 @@ from cursor_tg_connector.utils_formatting import (
 @dataclass(slots=True)
 class AgentConversationSnapshot:
     agent: Agent
-    unread_messages: list[ConversationMessage]
+    unread_messages: list[ConversationMessage | PendingConversationMessage]
     delivered_count: int = 0
+
+
+@dataclass(slots=True)
+class PendingConversationMessage:
+    id: str
+    text: str
+    delivered_count_after: int
+    delivered_text_length_after: int
+
+
+class Notifier(Protocol):
+    async def send_text(
+        self,
+        chat_id: int,
+        text: str,
+        message_thread_id: int | None = None,
+        reply_markup: object | None = None,
+    ) -> None: ...
+
+
+async def deliver_snapshot_messages(
+    *,
+    snapshot: AgentConversationSnapshot,
+    state_repo: StateRepository,
+    notifier: Notifier,
+    chat_id: int,
+    message_thread_id: int | None = None,
+    limit: int = 10,
+    reply_markup_first: object | None = None,
+) -> int:
+    delivered = 0
+    for index, message in enumerate(snapshot.unread_messages[:limit]):
+        send_kwargs: dict[str, object] = {"message_thread_id": message_thread_id}
+        if reply_markup_first is not None and index == 0:
+            send_kwargs["reply_markup"] = reply_markup_first
+        await notifier.send_text(
+            chat_id,
+            build_active_agent_message(snapshot.agent, message.text),
+            **send_kwargs,
+        )
+        delivered += 1
+        delivered_count_after = getattr(
+            message,
+            "delivered_count_after",
+            snapshot.delivered_count + delivered,
+        )
+        delivered_text_length_after = getattr(
+            message,
+            "delivered_text_length_after",
+            len(message.text),
+        )
+        await state_repo.set_delivery_state(
+            snapshot.agent.id,
+            delivered_count_after,
+            last_message_id=message.id,
+            last_message_text_length=delivered_text_length_after,
+        )
+    return delivered
 
 
 class AgentStopError(RuntimeError):
@@ -71,7 +130,16 @@ class AgentService:
     async def clear_unread_for_agent(self, agent_id: str) -> str:
         conversation = await self.cursor_client.get_conversation(agent_id)
         total = sum(1 for m in conversation.messages if m.type == "assistant_message")
-        await self.state_repo.set_delivery_cursor(agent_id, total)
+        assistant_messages = [
+            message for message in conversation.messages if message.type == "assistant_message"
+        ]
+        last_message = assistant_messages[-1] if assistant_messages else None
+        await self.state_repo.set_delivery_state(
+            agent_id,
+            total,
+            last_message_id=last_message.id if last_message else None,
+            last_message_text_length=len(last_message.text) if last_message else 0,
+        )
         agent = await self.cursor_client.get_agent(agent_id)
         return agent.name or agent_id
 
@@ -145,17 +213,14 @@ class AgentService:
         limit: int = 10,
     ) -> int:
         snapshot = await self.get_unread_snapshot(agent_id)
-        to_send = snapshot.unread_messages[:limit]
-        cursor = snapshot.delivered_count
-        for message in to_send:
-            await notifier.send_text(
-                chat_id,
-                build_active_agent_message(snapshot.agent, message.text),
-                message_thread_id=message_thread_id,
-            )
-            cursor += 1
-            await self.state_repo.set_delivery_cursor(agent_id, cursor)
-        return len(to_send)
+        return await deliver_snapshot_messages(
+            snapshot=snapshot,
+            state_repo=self.state_repo,
+            notifier=notifier,
+            chat_id=chat_id,
+            message_thread_id=message_thread_id,
+            limit=limit,
+        )
 
     async def resolve_context_agent_id(
         self,
@@ -178,19 +243,62 @@ class AgentService:
         assistant_messages = [
             message for message in conversation.messages if message.type == "assistant_message"
         ]
-        cursor = await self.state_repo.get_delivery_cursor(agent_id)
-        if cursor is None:
-            await self.state_repo.set_delivery_cursor(agent_id, len(assistant_messages))
+        state = await self.state_repo.get_delivery_state(agent_id)
+        if state is None:
+            last_message = assistant_messages[-1] if assistant_messages else None
+            await self.state_repo.set_delivery_state(
+                agent_id,
+                len(assistant_messages),
+                last_message_id=last_message.id if last_message else None,
+                last_message_text_length=len(last_message.text) if last_message else 0,
+            )
             return AgentConversationSnapshot(
                 agent=agent,
                 unread_messages=[],
                 delivered_count=len(assistant_messages),
             )
-        unread_messages = assistant_messages[cursor:]
+
+        delivered_count = min(state.delivered_count, len(assistant_messages))
+        if delivered_count > 0:
+            state = await self._ensure_last_message_state(
+                agent_id,
+                state,
+                assistant_messages[delivered_count - 1],
+                delivered_count,
+            )
+
+        unread_messages: list[PendingConversationMessage] = []
+        if (
+            delivered_count > 0
+            and state.last_message_id == assistant_messages[delivered_count - 1].id
+            and len(assistant_messages[delivered_count - 1].text) > state.last_message_text_length
+        ):
+            current_last = assistant_messages[delivered_count - 1]
+            unread_messages.append(
+                PendingConversationMessage(
+                    id=current_last.id,
+                    text=current_last.text[state.last_message_text_length :],
+                    delivered_count_after=delivered_count,
+                    delivered_text_length_after=len(current_last.text),
+                )
+            )
+
+        for index, message in enumerate(
+            assistant_messages[delivered_count:],
+            start=delivered_count + 1,
+        ):
+            unread_messages.append(
+                PendingConversationMessage(
+                    id=message.id,
+                    text=message.text,
+                    delivered_count_after=index,
+                    delivered_text_length_after=len(message.text),
+                )
+            )
         return AgentConversationSnapshot(
             agent=agent,
             unread_messages=unread_messages,
-            delivered_count=cursor,
+            delivered_count=delivered_count,
         )
 
     async def list_running_snapshots(self) -> list[AgentConversationSnapshot]:
@@ -202,3 +310,30 @@ class AgentService:
     async def _list_agents(self, statuses: set[str]) -> list[Agent]:
         agents = await self.cursor_client.list_agents()
         return [agent for agent in agents if agent.status in statuses]
+
+    async def _ensure_last_message_state(
+        self,
+        agent_id: str,
+        state: DeliveryCursorState,
+        current_last_message: ConversationMessage,
+        delivered_count: int,
+    ) -> DeliveryCursorState:
+        if (
+            state.last_message_id == current_last_message.id
+            and state.last_message_text_length <= len(current_last_message.text)
+        ):
+            return state
+
+        updated_state = DeliveryCursorState(
+            agent_id=agent_id,
+            delivered_count=delivered_count,
+            last_message_id=current_last_message.id,
+            last_message_text_length=len(current_last_message.text),
+        )
+        await self.state_repo.set_delivery_state(
+            agent_id,
+            delivered_count,
+            last_message_id=current_last_message.id,
+            last_message_text_length=len(current_last_message.text),
+        )
+        return updated_state

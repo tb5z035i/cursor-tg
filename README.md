@@ -25,7 +25,7 @@ A single-process Python service that bridges a Telegram bot with the [Cursor Clo
 
 ### 1. Create a Telegram bot
 
-1. Open Telegram and search for **@BotFather**.
+1. Open Telegram and search for [**@BotFather**](https://t.me/BotFather).
 2. Send `/newbot` and follow the prompts to choose a name and username.
 3. BotFather will reply with a token like `123456:ABC-DEF...`. Save this as `TELEGRAM_BOT_TOKEN`.
 

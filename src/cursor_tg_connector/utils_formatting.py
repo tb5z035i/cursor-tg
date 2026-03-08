@@ -96,7 +96,7 @@ def build_active_agent_message(agent: Agent, text: str) -> str:
 
 
 def build_user_history_message(text: str) -> str:
-    return f"> _You_\n{text}".strip()
+    return f"> *You*\n{text}".strip()
 
 
 def build_agent_thread_name(agent: Agent) -> str:

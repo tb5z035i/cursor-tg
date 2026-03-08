@@ -244,7 +244,7 @@ async def test_help_command_includes_project_github_url(settings, state_repo) ->
 
 
 @pytest.mark.asyncio
-async def test_agents_command_renders_status_table_without_clickable_options(
+async def test_agents_command_renders_hierarchical_html_summary_in_non_thread_mode(
     settings,
     state_repo,
 ) -> None:
@@ -292,11 +292,79 @@ async def test_agents_command_renders_status_table_without_clickable_options(
 
     summary, kwargs = message.replies[0]
     assert kwargs == {"parse_mode": "HTML"}
-    assert "<pre>" in summary
-    assert "Status" in summary
-    assert "RUNNING" in summary
-    assert "FINISHED" in summary
+    assert "<pre>" not in summary
+    assert "• <b>Agent One</b>" in summary
+    assert "• <b>Agent Two</b>" in summary
+    assert "  ◦ Status: RUNNING" in summary
+    assert "  ◦ Status: FINISHED" in summary
+    assert "  ◦ Unread messages: 2" in summary
+    assert "  ◦ Repository: acme/repo-a" in summary
+    assert "  ◦ Branch: main" in summary
+    assert "  ◦ Active: yes" in summary
+    assert "  ◦ Active: no" in summary
     assert "Use /focus to switch the active agent." in summary
+
+
+@pytest.mark.asyncio
+async def test_agents_command_renders_same_hierarchical_summary_in_thread_mode(
+    settings,
+    state_repo,
+) -> None:
+    message = FakeMessage()
+    items = [
+        AgentListItem(
+            agent_id="agent-1",
+            name="Agent One",
+            status="RUNNING",
+            repository="acme/repo-a",
+            branch="main",
+            label="Agent One · RUNNING · acme/repo-a · main · unread:2",
+            unread_count=2,
+            is_active=False,
+        ),
+        AgentListItem(
+            agent_id="agent-2",
+            name="Agent Two",
+            status="FINISHED",
+            repository="acme/repo-b",
+            branch="dev",
+            label="Agent Two · FINISHED · acme/repo-b · dev · unread:0",
+            unread_count=0,
+            is_active=False,
+        ),
+    ]
+    update = SimpleNamespace(
+        effective_user=SimpleNamespace(id=settings.telegram_allowed_user_id),
+        effective_message=message,
+        effective_chat=SimpleNamespace(id=999),
+    )
+    session = await state_repo.get_session(settings.telegram_allowed_user_id)
+    session.thread_mode_enabled = True
+    await state_repo.upsert_session(session)
+
+    await agents_command(
+        update,
+        build_context(
+            settings=settings,
+            state_repo=state_repo,
+            agent_service=FakeListAgentService(items),
+        ),
+    )
+
+    assert len(message.replies) == 1
+
+    summary, kwargs = message.replies[0]
+    assert kwargs["parse_mode"] == "HTML"
+    assert "reply_markup" in kwargs
+    assert "<pre>" not in summary
+    assert "• <b>Agent One</b>" in summary
+    assert "• <b>Agent Two</b>" in summary
+    assert "  ◦ Status: RUNNING" in summary
+    assert "  ◦ Unread messages: 2" in summary
+    assert "  ◦ Repository: acme/repo-a" in summary
+    assert "  ◦ Branch: main" in summary
+    assert "Active:" not in summary
+    assert "Tap a button below to create or open a thread." in summary
 
 
 @pytest.mark.asyncio

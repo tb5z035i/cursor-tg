@@ -244,83 +244,39 @@ def format_command_list(title: str, lines: Iterable[str]) -> str:
     return f"{title}\n" + "\n".join(f"- {line}" for line in items)
 
 
-def build_agents_summary_message(items: Iterable[AgentListItem]) -> str:
+def build_agents_summary_message(
+    items: Iterable[AgentListItem],
+    *,
+    threaded: bool,
+) -> str:
     agent_items = list(items)
     if not agent_items:
         return "Agents\n(none)"
 
-    table = format_text_table(
-        ["Active", "Name", "Status", "Repository", "Branch", "Unread"],
-        [
-            [
-                "yes" if item.is_active else "",
-                item.name,
-                item.status,
-                item.repository,
-                item.branch,
-                str(item.unread_count),
-            ]
-            for item in agent_items
-        ],
-        max_widths=[6, 24, 10, 24, 18, 6],
+    lines = ["Agents", ""]
+    for item in agent_items:
+        lines.extend(_build_agent_summary_lines(item, threaded=threaded))
+        lines.append("")
+    lines.pop()
+    lines.append(
+        "Tap a button below to create or open a thread."
+        if threaded
+        else "Use /focus to switch the active agent."
     )
-    return (
-        "Agents\n"
-        "<pre>"
-        f"{html.escape(table)}"
-        "</pre>\n"
-        "Use /focus to switch the active agent."
-    )
+    return "\n".join(lines)
 
 
-def format_text_table(
-    headers: list[str],
-    rows: list[list[str]],
-    *,
-    max_widths: list[int] | None = None,
-) -> str:
-    normalized_rows = [[_normalize_table_cell(cell) for cell in row] for row in rows]
-    normalized_headers = [_normalize_table_cell(header) for header in headers]
-    widths: list[int] = []
-    for index, header in enumerate(normalized_headers):
-        values = [header, *[row[index] for row in normalized_rows]]
-        width = max(len(value) for value in values)
-        if max_widths is not None:
-            width = min(width, max_widths[index])
-        widths.append(width)
-
-    rendered_headers = [
-        _truncate_table_cell(header, widths[index]).ljust(widths[index])
-        for index, header in enumerate(normalized_headers)
+def _build_agent_summary_lines(item: AgentListItem, *, threaded: bool) -> list[str]:
+    lines = [
+        f"• <b>{html.escape(item.name)}</b>",
+        f"  ◦ Status: {html.escape(item.status)}",
+        f"  ◦ Unread messages: {item.unread_count}",
+        f"  ◦ Repository: {html.escape(item.repository)}",
+        f"  ◦ Branch: {html.escape(item.branch)}",
     ]
-    rendered_rows = [
-        " | ".join(
-            _truncate_table_cell(cell, widths[index]).ljust(widths[index])
-            for index, cell in enumerate(row)
-        )
-        for row in normalized_rows
-    ]
-    separator = "-+-".join("-" * width for width in widths)
-    return "\n".join(
-        [
-            " | ".join(rendered_headers),
-            separator,
-            *rendered_rows,
-        ]
-    )
-
-
-def _normalize_table_cell(value: str) -> str:
-    collapsed = " ".join(value.split())
-    return collapsed or "-"
-
-
-def _truncate_table_cell(value: str, width: int) -> str:
-    if len(value) <= width:
-        return value
-    if width <= 3:
-        return value[:width]
-    return f"{value[: width - 3]}..."
+    if not threaded:
+        lines.append(f"  ◦ Active: {'yes' if item.is_active else 'no'}")
+    return lines
 
 
 def _html_link_or_text(url: str | None, fallback_text: str) -> str:

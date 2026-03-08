@@ -36,7 +36,6 @@ from cursor_tg_connector.utils_formatting import (
     build_thread_mode_guidance,
     build_thread_mode_status,
     build_user_history_message,
-    format_command_list,
 )
 
 _PROJECT_GITHUB_URL = "https://github.com/tb5z035i/cursor-tg"
@@ -386,14 +385,18 @@ async def agents_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 for item in items
             ]
         )
-        summary = format_command_list(
-            "Agents (tap to create/open a thread)",
-            [item.label for item in items],
+        summary = build_agents_summary_message(
+            items,
+            threaded=True,
         )
-        await update.effective_message.reply_text(summary, reply_markup=keyboard)
+        await update.effective_message.reply_text(
+            summary,
+            reply_markup=keyboard,
+            parse_mode="HTML",
+        )
         return
 
-    summary = build_agents_summary_message(items)
+    summary = build_agents_summary_message(items, threaded=False)
     await update.effective_message.reply_text(summary, parse_mode="HTML")
 
 

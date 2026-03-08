@@ -16,9 +16,10 @@ class Notifier(Protocol):
         self,
         chat_id: int,
         text: str,
+        message_thread_id: int | None = None,
         reply_markup: InlineKeyboardMarkup | None = None,
     ) -> None: ...
-    async def send_typing(self, chat_id: int) -> None: ...
+    async def send_typing(self, chat_id: int, message_thread_id: int | None = None) -> None: ...
 
 
 class TelegramNotifier:
@@ -29,6 +30,7 @@ class TelegramNotifier:
         self,
         chat_id: int,
         text: str,
+        message_thread_id: int | None = None,
         reply_markup: InlineKeyboardMarkup | None = None,
     ) -> None:
         chunks = chunk_message(text)
@@ -40,6 +42,7 @@ class TelegramNotifier:
                     chat_id=chat_id,
                     text=html_chunk,
                     parse_mode="HTML",
+                    message_thread_id=message_thread_id,
                     reply_markup=chunk_markup,
                 )
             except Exception:
@@ -47,11 +50,16 @@ class TelegramNotifier:
                 await self.bot.send_message(
                     chat_id=chat_id,
                     text=chunk,
+                    message_thread_id=message_thread_id,
                     reply_markup=chunk_markup,
                 )
 
-    async def send_typing(self, chat_id: int) -> None:
+    async def send_typing(self, chat_id: int, message_thread_id: int | None = None) -> None:
         try:
-            await self.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
+            await self.bot.send_chat_action(
+                chat_id=chat_id,
+                action=ChatAction.TYPING,
+                message_thread_id=message_thread_id,
+            )
         except Exception:
             logger.debug("Failed to send typing action")

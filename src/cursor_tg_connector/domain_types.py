@@ -24,6 +24,7 @@ class SessionState:
     telegram_user_id: int
     telegram_chat_id: int | None = None
     active_agent_id: str | None = None
+    thread_mode_enabled: bool = False
     unselected_agent_unread_mode: UnselectedAgentUnreadMode = (
         UnselectedAgentUnreadMode.COUNT
     )
@@ -49,3 +50,10 @@ class AgentListItem:
     label: str
     unread_count: int
     is_active: bool
+
+
+@dataclass(slots=True)
+class AgentThreadBinding:
+    agent_id: str
+    telegram_chat_id: int
+    message_thread_id: int

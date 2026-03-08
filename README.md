@@ -82,17 +82,20 @@ The SQLite database defaults to `/data/connector.db`. Mount `/data` to persisten
 | Command | Description |
 |---|---|
 | `/current` | Show info about the active agent (name, status, repo, branches, PR link) |
-| `/agents` | List running and finished agents in a summary table |
+| `/agents` | List running and finished agents; tap one to select it, or create/open its thread when thread mode is enabled |
 | `/focus` | Show clickable agent options to choose the active agent |
 | `/configure_unread` | Configure how unread messages from unselected agents are shown: `full`, `count`, or `none` |
 | `/unfocus` | Clear the currently selected active agent |
 | `/stop` | Stop the currently selected running agent and clear the active selection |
 | `/clear` | Mark all unread messages as read for the active agent |
+| `/threadmode` | Show status or toggle per-agent Telegram thread routing with `/threadmode on|off|status` |
 | `/newagent` | Create a new agent with a 4-step wizard (model → repo → branch → prompt) |
 | `/cancel` | Abort the in-progress `/newagent` wizard |
+| `/resetdb` | Show a confirmation prompt before wiping and reinitializing local SQLite state |
 | `/help` | Show available commands |
 
-Any other text message is forwarded as a follow-up to the active agent.
+Any other text message is forwarded as a follow-up to the active agent. When thread mode is
+enabled, follow-ups must be sent from the bound agent thread.
 
 ## How it works
 
@@ -106,7 +109,31 @@ Any other text message is forwarded as a follow-up to the active agent.
 - When you switch agents via `/focus` or a notice button, unread messages are delivered immediately.
 - Messages from Cursor agents are converted from Markdown to Telegram HTML (bold, italic, code blocks, blockquotes, lists).
 - Follow-up messages you send are forwarded to the Cursor agent; the service polls for a response for up to 3 minutes.
-- All state (active agent, unread display preference, delivery cursors, wizard progress) is stored in a local SQLite database.
+- All state (active agent, unread display preference, delivery cursors, wizard progress, and thread bindings) is stored in a local SQLite database.
+
+## Threaded mode
+
+Use `/threadmode on` if you want one Telegram thread/topic per Cursor agent.
+
+- In threaded mode, `/agents` becomes the button-based thread opener for agents.
+- `/focus` remains the non-thread-mode active-agent picker.
+- Bound agents receive their unread assistant messages directly inside their own thread.
+- Agents without a bound thread still use the configured root-chat unread policy from `/configure_unread`.
+- Notice buttons open/create the agent thread instead of switching the root-chat active selection.
+- Follow-ups must be sent from the correct bound thread.
+- `/current`, `/clear`, and `/stop` only work inside a bound thread while thread mode is enabled.
+- `/newagent` must be started from the root chat, not from inside an existing agent thread.
+
+Use `/threadmode off` to return to the legacy single-active-agent chat flow. Existing thread
+bindings are preserved.
+
+## Resetting local state
+
+Use `/resetdb` to wipe the bot's local SQLite state and recreate the schema. The bot will ask
+for inline-button confirmation before doing anything destructive.
+
+This clears local session data, wizard state, unread notices, delivery cursors, and stored
+agent/thread bindings. It does not stop or delete Cursor agents in Cursor Cloud.
 
 ## Configuration reference
 

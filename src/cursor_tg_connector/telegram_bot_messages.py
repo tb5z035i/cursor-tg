@@ -11,8 +11,12 @@ from cursor_tg_connector.domain_types import WizardStep
 from cursor_tg_connector.services_create_agent_service import CreateAgentError
 from cursor_tg_connector.services_followup_service import FollowupError
 from cursor_tg_connector.services_notification import TelegramNotifier
-from cursor_tg_connector.telegram_bot_common import get_services
-from cursor_tg_connector.utils_formatting import build_agent_created_message
+from cursor_tg_connector.telegram_bot_common import get_message_thread_id, get_services
+from cursor_tg_connector.telegram_threads import ensure_agent_thread
+from cursor_tg_connector.utils_formatting import (
+    build_agent_created_message,
+    build_thread_opened_message,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +59,7 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         services.settings.telegram_allowed_user_id
     )
     msg = update.effective_message
+    message_thread_id = get_message_thread_id(update)
     text = msg.text or msg.caption or ""
 
     if session.wizard_state == WizardStep.WAITING_MODEL:
@@ -91,10 +96,31 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             await msg.reply_text(str(exc))
             return
 
-        await notifier.send_text(
-            update.effective_chat.id,
-            build_agent_created_message(agent),
-        )
+        if session.thread_mode_enabled:
+            try:
+                binding, created = await ensure_agent_thread(
+                    bot=context.bot,
+                    state_repo=services.create_agent_service.state_repo,
+                    agent=agent,
+                    chat_id=update.effective_chat.id,
+                )
+            except Exception:
+                await msg.reply_text(
+                    "Agent created, but I could not create its Telegram thread. "
+                    "Make sure threaded mode is enabled for this chat."
+                )
+                return
+            await notifier.send_text(
+                binding.telegram_chat_id,
+                build_agent_created_message(agent),
+                message_thread_id=binding.message_thread_id,
+            )
+            await msg.reply_text(build_thread_opened_message(agent, created))
+        else:
+            await notifier.send_text(
+                update.effective_chat.id,
+                build_agent_created_message(agent),
+            )
         return
 
     images = await _extract_images(update)
@@ -102,6 +128,7 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         delivered_count = await services.followup_service.send_followup(
             services.settings.telegram_allowed_user_id,
             update.effective_chat.id,
+            message_thread_id,
             text,
             notifier,
             images=images or None,

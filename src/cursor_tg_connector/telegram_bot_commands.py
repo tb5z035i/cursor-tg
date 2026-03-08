@@ -9,13 +9,20 @@ from cursor_tg_connector.services_agent_service import AgentStopError
 from cursor_tg_connector.services_create_agent_service import CreateAgentError
 from cursor_tg_connector.telegram_bot_common import (
     BOT_COMMANDS,
+    get_message_thread_id,
     get_services,
     render_agent_keyboard,
     render_model_keyboard,
+    render_reset_db_keyboard,
 )
 from cursor_tg_connector.utils_formatting import (
     build_agent_info_message,
     build_agents_summary_message,
+    build_reset_db_prompt,
+    build_thread_command_guidance,
+    build_thread_mode_guidance,
+    build_thread_mode_status,
+    format_command_list,
 )
 
 _HELP_TEXT = (
@@ -26,16 +33,17 @@ _HELP_TEXT = (
     + "\n"
     "\n"
     "Usage:\n"
-    "• Send /agents to see running and finished agents in a summary table.\n"
-    "• Send /focus to choose the active agent from clickable options only.\n"
-    "• Send /configure_unread full|count|none to configure non-active agent unread behavior.\n"
+    "• Send /agents to view agents. In thread mode it becomes the thread opener.\n"
+    "• Send /focus to choose the active agent from clickable options in non-thread mode.\n"
+    "• Send /configure_unread full|count|none to control non-active agent notices.\n"
     "• Send /unfocus to clear the current active agent selection.\n"
     "• Send /stop to stop the currently selected running agent.\n"
+    "• Send /threadmode on to route each agent into its own Telegram thread.\n"
     "• Send /newagent to create a new agent (model → repo → branch → prompt).\n"
-    "• Send any text message to follow up with the active agent.\n"
-    "• Unread messages from the active agent are delivered automatically.\n"
-    "• Unselected agents can show full responses, unread counts, or nothing.\n"
-    "  When shown, they include a tap-to-switch button."
+    "• Send any text message to follow up with the active agent or from inside an agent thread.\n"
+    "• In thread mode, root-chat notices can still appear for unbound agents based on "
+    "/configure_unread.\n"
+    "• Use /resetdb if you want to wipe and reinitialize local bot state."
 )
 
 _STOP_HELP_TEXT = (
@@ -64,9 +72,23 @@ async def current_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         return
 
     services = get_services(context)
-    agent = await services.agent_service.ensure_active_agent_exists(
-        services.settings.telegram_allowed_user_id,
+    session = await services.create_agent_service.state_repo.get_session(
+        services.settings.telegram_allowed_user_id
     )
+    if session.thread_mode_enabled:
+        agent_id = await services.agent_service.resolve_context_agent_id(
+            telegram_user_id=services.settings.telegram_allowed_user_id,
+            chat_id=update.effective_chat.id,
+            message_thread_id=get_message_thread_id(update),
+        )
+        if agent_id is None:
+            await update.effective_message.reply_text(build_thread_command_guidance())
+            return
+        agent = await services.agent_service.cursor_client.get_agent(agent_id)
+    else:
+        agent = await services.agent_service.ensure_active_agent_exists(
+            services.settings.telegram_allowed_user_id,
+        )
     if agent is None:
         await update.effective_message.reply_text(
             "No active agent selected. Use /focus to pick one."
@@ -81,9 +103,23 @@ async def clear_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         return
 
     services = get_services(context)
-    agent_name = await services.agent_service.clear_unread(
-        services.settings.telegram_allowed_user_id,
+    session = await services.create_agent_service.state_repo.get_session(
+        services.settings.telegram_allowed_user_id
     )
+    if session.thread_mode_enabled:
+        agent_id = await services.agent_service.resolve_context_agent_id(
+            telegram_user_id=services.settings.telegram_allowed_user_id,
+            chat_id=update.effective_chat.id,
+            message_thread_id=get_message_thread_id(update),
+        )
+        if agent_id is None:
+            await update.effective_message.reply_text(build_thread_command_guidance())
+            return
+        agent_name = await services.agent_service.clear_unread_for_agent(agent_id)
+    else:
+        agent_name = await services.agent_service.clear_unread(
+            services.settings.telegram_allowed_user_id,
+        )
     if agent_name is None:
         await update.effective_message.reply_text(
             "No active agent selected. Use /focus to pick one."
@@ -152,9 +188,23 @@ async def stop_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
     services = get_services(context)
     try:
-        agent = await services.agent_service.stop_active_agent(
-            services.settings.telegram_allowed_user_id,
+        session = await services.create_agent_service.state_repo.get_session(
+            services.settings.telegram_allowed_user_id
         )
+        if session.thread_mode_enabled:
+            agent_id = await services.agent_service.resolve_context_agent_id(
+                telegram_user_id=services.settings.telegram_allowed_user_id,
+                chat_id=update.effective_chat.id,
+                message_thread_id=get_message_thread_id(update),
+            )
+            if agent_id is None:
+                await update.effective_message.reply_text(build_thread_command_guidance())
+                return
+            agent = await services.agent_service.stop_agent_by_id(agent_id)
+        else:
+            agent = await services.agent_service.stop_active_agent(
+                services.settings.telegram_allowed_user_id,
+            )
     except (AgentStopError, CursorApiError) as exc:
         await update.effective_message.reply_text(str(exc))
         return
@@ -170,8 +220,16 @@ async def focus_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     if not await _authorize_and_record_chat(update, context):
         return
 
+    services = get_services(context)
+    session = await services.create_agent_service.state_repo.get_session(
+        services.settings.telegram_allowed_user_id
+    )
     message = update.effective_message
     if message is None:
+        return
+
+    if session.thread_mode_enabled:
+        await message.reply_text(build_thread_mode_guidance())
         return
 
     items = await _list_agent_selection_items(context)
@@ -194,6 +252,26 @@ async def agents_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await update.effective_message.reply_text("No agents found.")
         return
 
+    session = await services.create_agent_service.state_repo.get_session(
+        services.settings.telegram_allowed_user_id
+    )
+    if session.thread_mode_enabled:
+        keyboard = render_agent_keyboard(
+            [
+                (
+                    item.agent_id,
+                    item.label,
+                )
+                for item in items
+            ]
+        )
+        summary = format_command_list(
+            "Agents (tap to create/open a thread)",
+            [item.label for item in items],
+        )
+        await update.effective_message.reply_text(summary, reply_markup=keyboard)
+        return
+
     summary = build_agents_summary_message(items)
     await update.effective_message.reply_text(summary, parse_mode="HTML")
 
@@ -203,6 +281,21 @@ async def new_agent_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         return
 
     services = get_services(context)
+    session = await services.create_agent_service.state_repo.get_session(
+        services.settings.telegram_allowed_user_id
+    )
+    if session.thread_mode_enabled:
+        thread_id = get_message_thread_id(update)
+        if thread_id is not None:
+            binding = await services.create_agent_service.state_repo.get_thread_binding(
+                update.effective_chat.id,
+                thread_id,
+            )
+            if binding is not None:
+                await update.effective_message.reply_text(
+                    "Run /newagent from the root chat, not from inside an agent thread."
+                )
+                return
     try:
         await services.create_agent_service.start_wizard(
             services.settings.telegram_allowed_user_id,
@@ -234,6 +327,56 @@ async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await update.effective_message.reply_text("Create-agent wizard cancelled.")
     else:
         await update.effective_message.reply_text("No create-agent wizard is currently running.")
+
+
+async def threadmode_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not await _authorize_and_record_chat(update, context):
+        return
+
+    services = get_services(context)
+    args = [arg.lower() for arg in getattr(context, "args", [])]
+    current = await services.create_agent_service.state_repo.get_session(
+        services.settings.telegram_allowed_user_id
+    )
+
+    if not args or args[0] == "status":
+        await update.effective_message.reply_text(
+            build_thread_mode_status(current.thread_mode_enabled)
+        )
+        return
+
+    if args[0] == "on":
+        updated = await services.create_agent_service.state_repo.set_thread_mode_enabled(
+            services.settings.telegram_allowed_user_id,
+            True,
+        )
+        await update.effective_message.reply_text(
+            build_thread_mode_status(updated.thread_mode_enabled)
+        )
+        return
+
+    if args[0] == "off":
+        updated = await services.create_agent_service.state_repo.set_thread_mode_enabled(
+            services.settings.telegram_allowed_user_id,
+            False,
+        )
+        await update.effective_message.reply_text(
+            build_thread_mode_status(updated.thread_mode_enabled)
+            + "\n\nExisting thread bindings were preserved."
+        )
+        return
+
+    await update.effective_message.reply_text("Usage: /threadmode [on|off|status]")
+
+
+async def resetdb_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not await _authorize_and_record_chat(update, context):
+        return
+
+    await update.effective_message.reply_text(
+        build_reset_db_prompt(),
+        reply_markup=render_reset_db_keyboard(),
+    )
 
 
 async def _authorize_and_record_chat(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:

@@ -64,6 +64,7 @@ async def run() -> None:
     )
     app_services = AppServices(
         settings=settings,
+        database=database,
         agent_service=agent_service,
         create_agent_service=create_agent_service,
         followup_service=followup_service,

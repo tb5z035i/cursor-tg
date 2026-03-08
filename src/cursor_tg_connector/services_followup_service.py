@@ -36,6 +36,7 @@ class FollowupService:
         self,
         telegram_user_id: int,
         chat_id: int,
+        message_thread_id: int | None,
         text: str,
         notifier,
         images: list[PromptImage] | None = None,
@@ -45,16 +46,26 @@ class FollowupService:
             raise FollowupError("Message cannot be empty.")
 
         session = await self.state_repo.update_chat_context(telegram_user_id, chat_id)
-        if not session.active_agent_id:
+        agent_id = await self.agent_service.resolve_context_agent_id(
+            telegram_user_id=telegram_user_id,
+            chat_id=chat_id,
+            message_thread_id=message_thread_id,
+        )
+        if not agent_id:
+            if session.thread_mode_enabled:
+                raise FollowupError(
+                    "Thread mode is on. Use /agents in the root chat to open an "
+                    "agent thread, then send the follow-up there."
+                )
             raise FollowupError("No active agent selected. Use /focus first.")
 
-        agent_id = session.active_agent_id
         self.active_followups.add(agent_id)
         try:
             await self.agent_service.deliver_active_agent_unread(
                 agent_id=agent_id,
                 notifier=notifier,
                 chat_id=chat_id,
+                message_thread_id=message_thread_id,
                 limit=10,
             )
 
@@ -64,7 +75,7 @@ class FollowupService:
             deadline = asyncio.get_running_loop().time() + timeout
             while asyncio.get_running_loop().time() < deadline:
                 await asyncio.sleep(self.settings.followup_poll_interval_seconds)
-                await notifier.send_typing(chat_id)
+                await notifier.send_typing(chat_id, message_thread_id=message_thread_id)
                 snapshot = await self.agent_service.get_unread_snapshot(agent_id)
                 if not snapshot.unread_messages:
                     continue
@@ -75,6 +86,7 @@ class FollowupService:
                     await notifier.send_text(
                         chat_id,
                         build_active_agent_message(snapshot.agent, message.text),
+                        message_thread_id=message_thread_id,
                     )
                     cursor += 1
                     await self.state_repo.set_delivery_cursor(agent_id, cursor)

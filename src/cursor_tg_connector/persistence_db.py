@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS telegram_session (
     telegram_user_id INTEGER PRIMARY KEY,
     telegram_chat_id INTEGER,
     active_agent_id TEXT,
+    thread_mode_enabled INTEGER NOT NULL DEFAULT 0,
     unselected_agent_unread_mode TEXT NOT NULL DEFAULT 'count',
     wizard_state TEXT NOT NULL DEFAULT 'idle',
     wizard_payload_json TEXT NOT NULL DEFAULT '{}',
@@ -44,6 +45,25 @@ CREATE TABLE IF NOT EXISTS agent_delivery_cursor (
 )
 """
 
+CREATE_AGENT_THREAD_BINDING_TABLE = """
+CREATE TABLE IF NOT EXISTS agent_thread_binding (
+    agent_id TEXT PRIMARY KEY,
+    telegram_chat_id INTEGER NOT NULL,
+    message_thread_id INTEGER NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE (telegram_chat_id, message_thread_id)
+)
+"""
+
+MANAGED_TABLES = (
+    "agent_thread_binding",
+    "agent_delivery_cursor",
+    "agent_notice_state",
+    "agent_message_delivery",
+    "telegram_session",
+)
+
 
 class Database:
     def __init__(self, path: Path) -> None:
@@ -57,18 +77,50 @@ class Database:
             await _ensure_column(
                 db,
                 table_name="telegram_session",
+                column_name="thread_mode_enabled",
+                definition="INTEGER NOT NULL DEFAULT 0",
+            )
+            await _ensure_column(
+                db,
+                table_name="telegram_session",
                 column_name="unselected_agent_unread_mode",
                 definition="TEXT NOT NULL DEFAULT 'count'",
             )
             await db.execute(CREATE_MESSAGE_DELIVERY_TABLE)
             await db.execute(CREATE_NOTICE_STATE_TABLE)
             await db.execute(CREATE_DELIVERY_CURSOR_TABLE)
+            await db.execute(CREATE_AGENT_THREAD_BINDING_TABLE)
             await db.commit()
 
     async def connect(self) -> aiosqlite.Connection:
         db = await aiosqlite.connect(self.path)
         db.row_factory = aiosqlite.Row
         return db
+
+    async def reset(self) -> None:
+        async with aiosqlite.connect(self.path) as db:
+            await db.execute("PRAGMA journal_mode=WAL")
+            await db.execute(CREATE_SESSION_TABLE)
+            await _ensure_column(
+                db,
+                table_name="telegram_session",
+                column_name="thread_mode_enabled",
+                definition="INTEGER NOT NULL DEFAULT 0",
+            )
+            await _ensure_column(
+                db,
+                table_name="telegram_session",
+                column_name="unselected_agent_unread_mode",
+                definition="TEXT NOT NULL DEFAULT 'count'",
+            )
+            await db.execute(CREATE_MESSAGE_DELIVERY_TABLE)
+            await db.execute(CREATE_NOTICE_STATE_TABLE)
+            await db.execute(CREATE_DELIVERY_CURSOR_TABLE)
+            await db.execute(CREATE_AGENT_THREAD_BINDING_TABLE)
+            for table_name in MANAGED_TABLES:
+                await db.execute(f"DELETE FROM {table_name}")
+            await db.commit()
+        await self.initialize()
 
 
 async def _ensure_column(

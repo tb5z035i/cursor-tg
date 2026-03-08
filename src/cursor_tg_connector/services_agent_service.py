@@ -53,7 +53,11 @@ class AgentService:
                     branch=agent.source.ref or "unknown-branch",
                     label=build_agent_label(agent, unread_count),
                     unread_count=unread_count,
-                    is_active=agent.id == session.active_agent_id,
+                    is_active=(
+                        False
+                        if session.thread_mode_enabled
+                        else agent.id == session.active_agent_id
+                    ),
                 )
             )
         return items
@@ -62,7 +66,9 @@ class AgentService:
         session = await self.state_repo.get_session(telegram_user_id)
         if not session.active_agent_id:
             return None
-        agent_id = session.active_agent_id
+        return await self.clear_unread_for_agent(session.active_agent_id)
+
+    async def clear_unread_for_agent(self, agent_id: str) -> str:
         conversation = await self.cursor_client.get_conversation(agent_id)
         total = sum(1 for m in conversation.messages if m.type == "assistant_message")
         await self.state_repo.set_delivery_cursor(agent_id, total)
@@ -73,15 +79,19 @@ class AgentService:
         session = await self.state_repo.get_session(telegram_user_id)
         if not session.active_agent_id:
             return None
+        agent = await self.stop_agent_by_id(session.active_agent_id)
+        await self.state_repo.set_active_agent(telegram_user_id, None)
+        return agent
 
-        agent = await self.cursor_client.get_agent(session.active_agent_id)
+    async def stop_agent_by_id(self, agent_id: str) -> Agent:
+        agent = await self.cursor_client.get_agent(agent_id)
         if agent.status != "RUNNING":
             raise AgentStopError(
-                f"{agent.name or agent.id} is not running. Use /focus to select a running agent."
+                f"{agent.name or agent.id} is not running. Use /focus to select it, "
+                "or /agents in threaded mode."
             )
 
         await self.cursor_client.stop_agent(agent.id)
-        await self.state_repo.set_active_agent(telegram_user_id, None)
         await self.state_repo.clear_notice_state(agent.id)
         return agent
 
@@ -115,6 +125,7 @@ class AgentService:
         agent_id: str,
         notifier,
         chat_id: int,
+        message_thread_id: int | None = None,
         limit: int = 10,
     ) -> int:
         snapshot = await self.get_unread_snapshot(agent_id)
@@ -124,10 +135,26 @@ class AgentService:
             await notifier.send_text(
                 chat_id,
                 build_active_agent_message(snapshot.agent, message.text),
+                message_thread_id=message_thread_id,
             )
             cursor += 1
             await self.state_repo.set_delivery_cursor(agent_id, cursor)
         return len(to_send)
+
+    async def resolve_context_agent_id(
+        self,
+        *,
+        telegram_user_id: int,
+        chat_id: int,
+        message_thread_id: int | None,
+    ) -> str | None:
+        session = await self.state_repo.get_session(telegram_user_id)
+        if not session.thread_mode_enabled:
+            return session.active_agent_id
+        if message_thread_id is None:
+            return None
+        binding = await self.state_repo.get_thread_binding(chat_id, message_thread_id)
+        return binding.agent_id if binding else None
 
     async def get_unread_snapshot(self, agent_id: str) -> AgentConversationSnapshot:
         agent = await self.cursor_client.get_agent(agent_id)

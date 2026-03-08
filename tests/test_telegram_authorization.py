@@ -71,7 +71,10 @@ def build_focus_context(settings, items: list[AgentListItem]) -> SimpleNamespace
     services = SimpleNamespace(
         settings=settings,
         create_agent_service=SimpleNamespace(
-            state_repo=SimpleNamespace(update_chat_context=_async_noop)
+            state_repo=SimpleNamespace(
+                update_chat_context=_async_noop,
+                get_session=_get_default_session,
+            )
         ),
         agent_service=FakeAgentService(),
     )
@@ -85,6 +88,10 @@ def build_focus_context(settings, items: list[AgentListItem]) -> SimpleNamespace
 
 async def _async_noop(*_: object, **__: object) -> None:
     return None
+
+
+async def _get_default_session(*_: object, **__: object):
+    return SimpleNamespace(thread_mode_enabled=False)
 
 
 @pytest.mark.asyncio

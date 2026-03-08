@@ -8,17 +8,22 @@ from cursor_tg_connector.config import Settings
 from cursor_tg_connector.cursor_api_models import Agent, ConversationMessage
 from cursor_tg_connector.domain_types import WizardStep
 from cursor_tg_connector.services_agent_service import AgentConversationSnapshot
-from cursor_tg_connector.services_followup_service import FollowupService
+from cursor_tg_connector.services_followup_service import FollowupError, FollowupService
 
 
 class FakeNotifier:
     def __init__(self) -> None:
         self.messages: list[str] = []
 
-    async def send_text(self, chat_id: int, text: str) -> None:
-        self.messages.append(f"{chat_id}:{text}")
+    async def send_text(
+        self,
+        chat_id: int,
+        text: str,
+        message_thread_id: int | None = None,
+    ) -> None:
+        self.messages.append(f"{chat_id}:{message_thread_id}:{text}")
 
-    async def send_typing(self, chat_id: int) -> None:
+    async def send_typing(self, chat_id: int, message_thread_id: int | None = None) -> None:
         pass
 
 
@@ -63,10 +68,20 @@ class FakeAgentService:
         agent_id: str,
         notifier,
         chat_id: int,
+        message_thread_id: int | None = None,
         limit: int,
     ) -> int:
         self.deliver_calls.append(agent_id)
         return 1
+
+    async def resolve_context_agent_id(
+        self,
+        *,
+        telegram_user_id: int,
+        chat_id: int,
+        message_thread_id: int | None,
+    ) -> str | None:
+        return "agent-1"
 
     async def get_unread_snapshot(self, agent_id: str) -> AgentConversationSnapshot:
         assert agent_id == "agent-1"
@@ -102,10 +117,16 @@ async def test_followup_service_only_relays_new_messages(settings: Settings, sta
         agent_service=FakeAgentService(),
     )
 
-    delivered_count = await service.send_followup(1234, 5678, "Please continue", notifier)
+    delivered_count = await service.send_followup(
+        1234,
+        5678,
+        None,
+        "Please continue",
+        notifier,
+    )
 
     assert delivered_count == 1
-    assert notifier.messages == ["5678:> **Active Agent**\nNew result"]
+    assert notifier.messages == ["5678:None:> **Active Agent**\nNew result"]
 
 
 @pytest.mark.asyncio
@@ -126,7 +147,7 @@ async def test_followup_service_registers_active_followup(settings: Settings, st
         active_followups=active_followups,
     )
 
-    await service.send_followup(1234, 5678, "Please continue", notifier)
+    await service.send_followup(1234, 5678, None, "Please continue", notifier)
 
     assert "agent-1" not in active_followups
 
@@ -155,6 +176,61 @@ async def test_followup_service_clears_flag_on_error(settings: Settings, state_r
     )
 
     with pytest.raises(RuntimeError, match="boom"):
-        await service.send_followup(1234, 5678, "Please continue", notifier)
+        await service.send_followup(1234, 5678, None, "Please continue", notifier)
 
     assert "agent-1" not in active_followups
+
+
+@pytest.mark.asyncio
+async def test_followup_service_uses_thread_binding_when_thread_mode_enabled(
+    settings: Settings,
+    state_repo,
+) -> None:
+    session = await state_repo.get_session(1234)
+    session.telegram_chat_id = 5678
+    session.thread_mode_enabled = True
+    await state_repo.upsert_session(session)
+
+    notifier = FakeNotifier()
+    service = FollowupService(
+        settings=settings,
+        cursor_client=FakeCursorClient(),
+        state_repo=state_repo,
+        agent_service=FakeAgentService(),
+    )
+
+    delivered_count = await service.send_followup(
+        1234,
+        5678,
+        42,
+        "Continue in thread",
+        notifier,
+    )
+
+    assert delivered_count == 1
+    assert notifier.messages == ["5678:42:> **Active Agent**\nNew result"]
+
+
+@pytest.mark.asyncio
+async def test_followup_service_rejects_root_chat_text_in_thread_mode(
+    settings: Settings,
+    state_repo,
+) -> None:
+    session = await state_repo.get_session(1234)
+    session.telegram_chat_id = 5678
+    session.thread_mode_enabled = True
+    await state_repo.upsert_session(session)
+
+    class NoThreadAgentService(FakeAgentService):
+        async def resolve_context_agent_id(self, **kwargs) -> str | None:
+            return None
+
+    service = FollowupService(
+        settings=settings,
+        cursor_client=FakeCursorClient(),
+        state_repo=state_repo,
+        agent_service=NoThreadAgentService(),
+    )
+
+    with pytest.raises(FollowupError, match="Thread mode is on"):
+        await service.send_followup(1234, 5678, None, "hello", FakeNotifier())

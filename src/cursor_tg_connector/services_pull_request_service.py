@@ -36,7 +36,10 @@ class PullRequestService:
             raise PullRequestActionError("This pull request is not open anymore.")
         if not pull_request.draft:
             raise PullRequestActionError("This pull request is already ready for review.")
-        return await github_client.mark_ready_for_review(pr_url)
+        return await github_client.mark_ready_for_review(
+            pr_url,
+            pull_request_id=pull_request.node_id,
+        )
 
     async def merge_pull_request(
         self,

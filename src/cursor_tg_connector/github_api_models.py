@@ -12,6 +12,7 @@ class GitHubBranchRef(BaseModel):
 
 
 class GitHubPullRequest(BaseModel):
+    node_id: str | None = Field(default=None, alias="node_id")
     number: int
     title: str
     state: str

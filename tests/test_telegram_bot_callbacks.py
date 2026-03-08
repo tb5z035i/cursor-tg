@@ -6,9 +6,12 @@ import pytest
 
 from cursor_tg_connector.cursor_api_models import Agent, AgentConversation
 from cursor_tg_connector.domain_types import AgentThreadBinding
+from cursor_tg_connector.github_api_models import GitHubMergeResult, GitHubPullRequest
 from cursor_tg_connector.services_agent_service import AgentService
 from cursor_tg_connector.telegram_bot_callbacks import callback_router
 from cursor_tg_connector.telegram_bot_common import (
+    PR_MERGE_PREFIX,
+    PR_READY_PREFIX,
     RESET_DB_CANCEL_PREFIX,
     RESET_DB_CONFIRM_PREFIX,
     SWITCH_AGENT_PREFIX,
@@ -47,7 +50,11 @@ class FakeCursorClient:
                 "name": "Agent One",
                 "status": "RUNNING",
                 "source": {"repository": "https://github.com/acme/repo-a", "ref": "main"},
-                "target": {"url": "https://cursor.com/agent-1", "branchName": "cursor/a"},
+                "target": {
+                    "url": "https://cursor.com/agent-1",
+                    "branchName": "cursor/a",
+                    "prUrl": "https://github.com/acme/repo-a/pull/123",
+                },
                 "createdAt": "2024-01-01T00:00:00Z",
             }
         )
@@ -88,13 +95,67 @@ class FakeCallbackQuery:
         return None
 
 
-def build_context(*, settings, state_repo, bot: FakeBot, agent_service: AgentService):
+class FakePullRequestService:
+    def __init__(self) -> None:
+        self.enabled = True
+        self.ready_calls: list[str] = []
+        self.merge_calls: list[tuple[str, str]] = []
+        self.pull_request = self._build_pull_request(state="open", draft=True, merged=False)
+
+    async def get_pull_request(self, agent: Agent) -> GitHubPullRequest:
+        return self.pull_request
+
+    async def mark_ready_for_review(self, agent: Agent) -> GitHubPullRequest:
+        self.ready_calls.append(agent.id)
+        self.pull_request = self._build_pull_request(state="open", draft=False, merged=False)
+        return self.pull_request
+
+    async def merge_pull_request(self, agent: Agent, *, merge_method: str) -> GitHubMergeResult:
+        self.merge_calls.append((agent.id, merge_method))
+        self.pull_request = self._build_pull_request(state="closed", draft=False, merged=True)
+        return GitHubMergeResult.model_validate(
+            {"merged": True, "message": "Pull Request successfully merged", "sha": "abc123"}
+        )
+
+    def _build_pull_request(
+        self,
+        *,
+        state: str,
+        draft: bool,
+        merged: bool,
+    ) -> GitHubPullRequest:
+        return GitHubPullRequest.model_validate(
+            {
+                "number": 123,
+                "title": "Improve bot PR actions",
+                "state": state,
+                "draft": draft,
+                "merged": merged,
+                "html_url": "https://github.com/acme/repo-a/pull/123",
+                "mergeable": True,
+                "mergeable_state": "clean",
+                "head": {"ref": "cursor/a"},
+                "base": {"ref": "main"},
+            }
+        )
+
+
+def build_context(
+    *,
+    settings,
+    state_repo,
+    bot: FakeBot,
+    agent_service: AgentService,
+    pull_request_service: object | None = None,
+):
     services = SimpleNamespace(
         settings=settings,
         database=state_repo.database,
         agent_service=agent_service,
         create_agent_service=SimpleNamespace(state_repo=state_repo),
     )
+    if pull_request_service is not None:
+        services.pull_request_service = pull_request_service
     application = SimpleNamespace(bot_data={"services": services})
     return SimpleNamespace(application=application, bot=bot)
 
@@ -198,3 +259,56 @@ async def test_switch_agent_callback_creates_thread_in_thread_mode(settings, sta
         for message in bot.messages
     )
     assert any(message[1] == 88 and "hello from agent" in message[2] for message in bot.messages)
+
+
+@pytest.mark.asyncio
+async def test_ready_pr_callback_updates_message_with_new_pr_state(settings, state_repo) -> None:
+    query = FakeCallbackQuery(f"{PR_READY_PREFIX}agent-1")
+    update = SimpleNamespace(
+        effective_user=SimpleNamespace(id=settings.telegram_allowed_user_id),
+        effective_chat=SimpleNamespace(id=999),
+        callback_query=query,
+    )
+    pull_request_service = FakePullRequestService()
+
+    await callback_router(
+        update,
+        build_context(
+            settings=settings,
+            state_repo=state_repo,
+            bot=FakeBot(),
+            agent_service=AgentService(FakeCursorClient(), state_repo),
+            pull_request_service=pull_request_service,
+        ),
+    )
+
+    assert pull_request_service.ready_calls == ["agent-1"]
+    assert query.answers[-1] == ("Marked ready for review", False)
+    assert "PR status: ready for review" in query.edits[-1]
+
+
+@pytest.mark.asyncio
+async def test_merge_pr_callback_updates_message_after_merge(settings, state_repo) -> None:
+    query = FakeCallbackQuery(f"{PR_MERGE_PREFIX}squash:agent-1")
+    update = SimpleNamespace(
+        effective_user=SimpleNamespace(id=settings.telegram_allowed_user_id),
+        effective_chat=SimpleNamespace(id=999),
+        callback_query=query,
+    )
+    pull_request_service = FakePullRequestService()
+    await pull_request_service.mark_ready_for_review(Agent.model_validate(FakeCursorClient().agent))
+
+    await callback_router(
+        update,
+        build_context(
+            settings=settings,
+            state_repo=state_repo,
+            bot=FakeBot(),
+            agent_service=AgentService(FakeCursorClient(), state_repo),
+            pull_request_service=pull_request_service,
+        ),
+    )
+
+    assert pull_request_service.merge_calls == [("agent-1", "squash")]
+    assert query.answers[-1] == ("Pull request merged", False)
+    assert "PR status: merged" in query.edits[-1]

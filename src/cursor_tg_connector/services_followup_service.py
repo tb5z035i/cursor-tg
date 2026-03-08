@@ -6,8 +6,10 @@ from cursor_tg_connector.config import Settings
 from cursor_tg_connector.cursor_api_client import CursorApiClient
 from cursor_tg_connector.cursor_api_models import PromptImage
 from cursor_tg_connector.persistence_state_repo import StateRepository
-from cursor_tg_connector.services_agent_service import AgentService
-from cursor_tg_connector.utils_formatting import build_active_agent_message
+from cursor_tg_connector.services_agent_service import (
+    AgentService,
+    deliver_snapshot_messages,
+)
 
 
 class FollowupError(RuntimeError):
@@ -80,17 +82,15 @@ class FollowupService:
                 if not snapshot.unread_messages:
                     continue
 
-                cursor = snapshot.delivered_count
-                delivered = snapshot.unread_messages[:10]
-                for message in delivered:
-                    await notifier.send_text(
-                        chat_id,
-                        build_active_agent_message(snapshot.agent, message.text),
-                        message_thread_id=message_thread_id,
-                    )
-                    cursor += 1
-                    await self.state_repo.set_delivery_cursor(agent_id, cursor)
-                return len(delivered)
+                delivered_count = await deliver_snapshot_messages(
+                    snapshot=snapshot,
+                    state_repo=self.state_repo,
+                    notifier=notifier,
+                    chat_id=chat_id,
+                    message_thread_id=message_thread_id,
+                    limit=10,
+                )
+                return delivered_count
 
             return 0
         finally:

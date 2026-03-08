@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import deque
+from types import SimpleNamespace
 
 import pytest
 from telegram import InlineKeyboardMarkup
@@ -13,7 +14,7 @@ from cursor_tg_connector.domain_types import (
     WizardStep,
 )
 from cursor_tg_connector.persistence_state_repo import StateRepository
-from cursor_tg_connector.services_agent_service import AgentConversationSnapshot
+from cursor_tg_connector.services_agent_service import AgentConversationSnapshot, AgentService
 from cursor_tg_connector.services_polling_service import PollingService
 
 
@@ -42,6 +43,25 @@ class FakeAgentService:
         if len(self.poll_batches) > 1:
             return self.poll_batches.popleft()
         return self.poll_batches[0]
+
+
+class MutableCursorClient:
+    def __init__(self, agent: Agent, messages: list[dict[str, str]]) -> None:
+        self.agent = agent
+        self.messages = messages
+
+    async def list_agents(self) -> list[Agent]:
+        return [self.agent]
+
+    async def get_agent(self, agent_id: str) -> Agent:
+        assert agent_id == self.agent.id
+        return self.agent
+
+    async def get_conversation(self, agent_id: str):
+        assert agent_id == self.agent.id
+        return SimpleNamespace(
+            messages=[make_message(item["id"], item["text"]) for item in self.messages]
+        )
 
 
 def make_agent(agent_id: str, name: str) -> Agent:
@@ -439,3 +459,37 @@ async def test_polling_service_thread_mode_honors_full_policy_for_unbound_agents
         "> **Other Agent**\nhidden response",
     )
     assert notifier.messages[0][3] is not None
+
+
+@pytest.mark.asyncio
+async def test_polling_service_relays_appended_text_when_last_message_grows(
+    settings: Settings,
+    state_repo: StateRepository,
+) -> None:
+    session = await state_repo.get_session(1234)
+    session.telegram_chat_id = 5678
+    session.active_agent_id = "agent-active"
+    session.wizard_state = WizardStep.IDLE
+    await state_repo.upsert_session(session)
+    await state_repo.set_delivery_cursor("agent-active", 0)
+
+    agent = make_agent("agent-active", "Active Agent")
+    client = MutableCursorClient(
+        agent,
+        [{"id": "msg-1", "text": "hello"}],
+    )
+    notifier = FakeNotifier()
+    service = PollingService(
+        settings=settings,
+        state_repo=state_repo,
+        agent_service=AgentService(client, state_repo),
+    )
+
+    await service.poll_once(notifier)
+    client.messages = [{"id": "msg-1", "text": "hello world"}]
+    await service.poll_once(notifier)
+
+    assert [text for _, _, text, _ in notifier.messages] == [
+        "> **Active Agent**\nhello",
+        "> **Active Agent**\n world",
+    ]

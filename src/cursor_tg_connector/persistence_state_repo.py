@@ -20,6 +20,14 @@ class NoticeState:
     last_notified_message_id: str | None
 
 
+@dataclass(slots=True)
+class DeliveryCursorState:
+    agent_id: str
+    delivered_count: int
+    last_message_id: str | None
+    last_message_text_length: int
+
+
 class StateRepository:
     def __init__(self, database: Database) -> None:
         self.database = database
@@ -208,35 +216,73 @@ class StateRepository:
         finally:
             await db.close()
 
-    async def get_delivery_cursor(self, agent_id: str) -> int | None:
+    async def get_delivery_state(self, agent_id: str) -> DeliveryCursorState | None:
         db = await self.database.connect()
         try:
             cursor = await db.execute(
-                "SELECT delivered_count FROM agent_delivery_cursor WHERE agent_id = ?",
+                """
+                SELECT delivered_count, last_message_id, last_message_text_length
+                FROM agent_delivery_cursor
+                WHERE agent_id = ?
+                """,
                 (agent_id,),
             )
             row = await cursor.fetchone()
         finally:
             await db.close()
-        return row["delivered_count"] if row else None
+        if row is None:
+            return None
+        return DeliveryCursorState(
+            agent_id=agent_id,
+            delivered_count=row["delivered_count"],
+            last_message_id=row["last_message_id"],
+            last_message_text_length=row["last_message_text_length"],
+        )
 
-    async def set_delivery_cursor(self, agent_id: str, count: int) -> None:
+    async def get_delivery_cursor(self, agent_id: str) -> int | None:
+        state = await self.get_delivery_state(agent_id)
+        return state.delivered_count if state else None
+
+    async def set_delivery_state(
+        self,
+        agent_id: str,
+        count: int,
+        *,
+        last_message_id: str | None,
+        last_message_text_length: int,
+    ) -> None:
         now = _utcnow()
         db = await self.database.connect()
         try:
             await db.execute(
                 """
-                INSERT INTO agent_delivery_cursor (agent_id, delivered_count, updated_at)
-                VALUES (?, ?, ?)
+                INSERT INTO agent_delivery_cursor (
+                    agent_id,
+                    delivered_count,
+                    last_message_id,
+                    last_message_text_length,
+                    updated_at
+                )
+                VALUES (?, ?, ?, ?, ?)
                 ON CONFLICT(agent_id) DO UPDATE SET
                     delivered_count = excluded.delivered_count,
+                    last_message_id = excluded.last_message_id,
+                    last_message_text_length = excluded.last_message_text_length,
                     updated_at = excluded.updated_at
                 """,
-                (agent_id, count, now),
+                (agent_id, count, last_message_id, last_message_text_length, now),
             )
             await db.commit()
         finally:
             await db.close()
+
+    async def set_delivery_cursor(self, agent_id: str, count: int) -> None:
+        await self.set_delivery_state(
+            agent_id,
+            count,
+            last_message_id=None,
+            last_message_text_length=0,
+        )
 
     async def clear_notice_state(self, agent_id: str) -> None:
         db = await self.database.connect()

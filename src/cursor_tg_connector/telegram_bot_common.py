@@ -44,6 +44,7 @@ BOT_COMMANDS: list[tuple[str, str]] = [
     ("threadmode", "Toggle per-agent Telegram thread routing"),
     ("newagent", "Create a new Cursor cloud agent"),
     ("pr", "Show the current agent pull request and actions"),
+    ("diff", "Show the current agent pull request diff"),
     ("ready", "Mark the current agent pull request ready for review"),
     ("merge", "Merge the current agent pull request"),
     ("cancel", "Cancel an in-progress create-agent wizard"),

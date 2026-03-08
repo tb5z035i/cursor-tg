@@ -207,6 +207,36 @@ def describe_pull_request_state(pull_request: GitHubPullRequest) -> str:
     return "ready for review"
 
 
+def build_pull_request_diff_messages(
+    pull_request: GitHubPullRequest,
+    diff_text: str,
+) -> list[str]:
+    escaped_url = html.escape(pull_request.html_url, quote=True)
+    escaped_title = html.escape(pull_request.title)
+    first_prefix = (
+        f'PR diff for <a href="{escaped_url}">#{pull_request.number}</a>: '
+        f"{escaped_title}\n<pre>"
+    )
+    continuation_prefix = "PR diff (continued):\n<pre>"
+    suffix = "</pre>"
+
+    normalized_diff = diff_text.rstrip("\n") or "(empty diff)"
+    inner_limit = max(
+        1,
+        min(
+            TELEGRAM_MESSAGE_LIMIT - len(first_prefix) - len(suffix),
+            TELEGRAM_MESSAGE_LIMIT - len(continuation_prefix) - len(suffix),
+        ),
+    )
+    chunks = _split_preformatted_text_chunks(normalized_diff, inner_limit)
+
+    messages: list[str] = []
+    for index, chunk in enumerate(chunks):
+        prefix = first_prefix if index == 0 else continuation_prefix
+        messages.append(f"{prefix}{html.escape(chunk)}</pre>")
+    return messages
+
+
 def build_repository_label(repository: Repository) -> str:
     return f"{repository.owner}/{repository.name}"
 
@@ -235,6 +265,47 @@ def chunk_message(text: str, limit: int = TELEGRAM_MESSAGE_LIMIT) -> list[str]:
         chunks.append(remaining[:split_at].rstrip())
         remaining = remaining[split_at:].lstrip()
     return chunks
+
+
+def _split_preformatted_text_chunks(text: str, max_escaped_len: int) -> list[str]:
+    chunks: list[str] = []
+    current_parts: list[str] = []
+    current_escaped_len = 0
+
+    for line in text.splitlines(keepends=True) or [""]:
+        for piece in _split_text_by_escaped_length(line, max_escaped_len):
+            piece_escaped_len = len(html.escape(piece))
+            if current_parts and current_escaped_len + piece_escaped_len > max_escaped_len:
+                chunks.append("".join(current_parts).rstrip("\n"))
+                current_parts = [piece]
+                current_escaped_len = piece_escaped_len
+                continue
+            current_parts.append(piece)
+            current_escaped_len += piece_escaped_len
+
+    if current_parts or not chunks:
+        chunks.append("".join(current_parts).rstrip("\n"))
+    return chunks
+
+
+def _split_text_by_escaped_length(text: str, max_escaped_len: int) -> list[str]:
+    pieces: list[str] = []
+    current_chars: list[str] = []
+    current_escaped_len = 0
+
+    for char in text:
+        char_escaped_len = len(html.escape(char))
+        if current_chars and current_escaped_len + char_escaped_len > max_escaped_len:
+            pieces.append("".join(current_chars))
+            current_chars = [char]
+            current_escaped_len = char_escaped_len
+            continue
+        current_chars.append(char)
+        current_escaped_len += char_escaped_len
+
+    if current_chars or not pieces:
+        pieces.append("".join(current_chars))
+    return pieces
 
 
 def format_command_list(title: str, lines: Iterable[str]) -> str:

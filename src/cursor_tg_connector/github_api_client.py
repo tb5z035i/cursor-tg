@@ -58,6 +58,14 @@ class GitHubApiClient:
         payload = await self._request("GET", f"/repos/{owner}/{repo}/pulls/{pull_number}")
         return GitHubPullRequest.model_validate(payload)
 
+    async def get_pull_request_diff(self, pr_url: str) -> str:
+        owner, repo, pull_number = parse_github_pr_url(pr_url)
+        return await self._request_text(
+            "GET",
+            f"/repos/{owner}/{repo}/pulls/{pull_number}",
+            headers={"Accept": "application/vnd.github.diff"},
+        )
+
     async def mark_ready_for_review(
         self,
         pr_url: str,
@@ -104,6 +112,19 @@ class GitHubApiClient:
         response = await self._client.request(method, url, json=json)
         if response.status_code == expected_status:
             return response.json()
+        raise GitHubApiError(self._build_error_message(response))
+
+    async def _request_text(
+        self,
+        method: str,
+        url: str,
+        *,
+        headers: dict[str, str] | None = None,
+        expected_status: int = 200,
+    ) -> str:
+        response = await self._client.request(method, url, headers=headers)
+        if response.status_code == expected_status:
+            return response.text
         raise GitHubApiError(self._build_error_message(response))
 
     async def _graphql_request(

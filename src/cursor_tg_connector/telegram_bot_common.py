@@ -37,6 +37,7 @@ BOT_COMMANDS: list[tuple[str, str]] = [
     ("unfocus", "Clear the active agent selection"),
     ("stop", "Stop the current running active agent"),
     ("clear", "Mark all unread messages as read for the active agent"),
+    ("close", "Close the current bound Telegram agent thread"),
     ("threadmode", "Toggle per-agent Telegram thread routing"),
     ("newagent", "Create a new Cursor cloud agent"),
     ("pr", "Show the current agent pull request and actions"),

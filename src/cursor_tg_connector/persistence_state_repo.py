@@ -51,6 +51,7 @@ class StateRepository:
             telegram_chat_id=row["telegram_chat_id"],
             active_agent_id=row["active_agent_id"],
             thread_mode_enabled=bool(row["thread_mode_enabled"]),
+            thread_mode_configured=bool(row["thread_mode_configured"]),
             unselected_agent_unread_mode=UnselectedAgentUnreadMode(
                 row["unselected_agent_unread_mode"]
             ),
@@ -73,6 +74,7 @@ class StateRepository:
                     telegram_chat_id,
                     active_agent_id,
                     thread_mode_enabled,
+                    thread_mode_configured,
                     unselected_agent_unread_mode,
                     wizard_state,
                     wizard_payload_json,
@@ -80,11 +82,12 @@ class StateRepository:
                     created_at,
                     updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(telegram_user_id) DO UPDATE SET
                     telegram_chat_id = excluded.telegram_chat_id,
                     active_agent_id = excluded.active_agent_id,
                     thread_mode_enabled = excluded.thread_mode_enabled,
+                    thread_mode_configured = excluded.thread_mode_configured,
                     unselected_agent_unread_mode = excluded.unselected_agent_unread_mode,
                     wizard_state = excluded.wizard_state,
                     wizard_payload_json = excluded.wizard_payload_json,
@@ -96,6 +99,7 @@ class StateRepository:
                     session.telegram_chat_id,
                     session.active_agent_id,
                     int(session.thread_mode_enabled),
+                    int(session.thread_mode_configured),
                     session.unselected_agent_unread_mode.value,
                     session.wizard_state.value,
                     json.dumps(session.wizard_payload),
@@ -124,9 +128,13 @@ class StateRepository:
         self,
         telegram_user_id: int,
         enabled: bool,
+        *,
+        configured: bool = True,
     ) -> SessionState:
         session = await self.get_session(telegram_user_id)
         session.thread_mode_enabled = enabled
+        if configured:
+            session.thread_mode_configured = True
         if enabled:
             session.active_agent_id = None
         await self.upsert_session(session)

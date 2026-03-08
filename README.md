@@ -201,10 +201,13 @@ If no GitHub token is configured, the bot still shows the PR link, but PR state 
 
 ### Threaded mode
 
-Use `/threadmode on` if you want one Telegram thread/topic per Cursor agent.
+If the bot itself has **Threaded Mode** enabled in
+[@BotFather](https://t.me/BotFather) (Telegram `getMe.has_topics_enabled = true`),
+the connector automatically turns on per-agent thread mode by default for new
+sessions.
 
-`/threadmode on` is allowed when the bot itself has **Threaded Mode** enabled in
-[@BotFather](https://t.me/BotFather) (Telegram `getMe.has_topics_enabled = true`).
+Use `/threadmode off` if you want to stay in the legacy single-chat flow, or
+use `/threadmode on` later to turn per-agent Telegram threads/topics back on.
 
 - In threaded mode, `/agents` becomes the button-based thread opener for agents.
 - `/focus` remains the non-thread-mode active-agent picker.
@@ -216,7 +219,7 @@ Use `/threadmode on` if you want one Telegram thread/topic per Cursor agent.
 - `/close` closes the current Telegram topic and removes its local binding. It does not delete the Cursor agent.
 - `/newagent` must be started from the root chat, not from inside an existing agent thread.
 
-Use `/threadmode off` to return to the legacy single-active-agent chat flow. Existing thread bindings are preserved.
+Existing thread bindings are preserved when you toggle thread mode off and back on.
 
 ### Resetting local state
 

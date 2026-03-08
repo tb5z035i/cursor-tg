@@ -17,6 +17,8 @@ from cursor_tg_connector.services_notification import TelegramNotifier
 from cursor_tg_connector.services_pull_request_service import PullRequestActionError
 from cursor_tg_connector.telegram_bot_common import (
     BOT_COMMANDS,
+    auto_enable_thread_mode_if_supported,
+    get_bot_thread_mode_support,
     get_message_thread_id,
     get_services,
     render_agent_keyboard,
@@ -83,13 +85,31 @@ _PR_ACTIONS_DISABLED_TEXT = (
 
 _MERGE_USAGE_TEXT = "Usage: /merge [merge|squash|rebase]"
 _HISTORY_USAGE_TEXT = "Usage: /history <count> (count must be a positive integer)"
+_START_GREETING = "Hi! I'm your Cursor Telegram connector."
+_THREAD_MODE_DISABLED_EXPLANATION = (
+    "Telegram Threaded Mode is not enabled for this bot.\n\n"
+    "Thread mode gives each Cursor agent its own Telegram topic/thread, so follow-ups and "
+    "unread replies stay separated per agent. Enable Threaded Mode in @BotFather if you "
+    "want that workflow; until then the bot will stay in the legacy single-chat flow."
+)
 
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not await _authorize_and_record_chat(update, context):
         return
 
-    await update.effective_message.reply_text(_HELP_TEXT)
+    services = get_services(context)
+    session = await services.create_agent_service.state_repo.get_session(
+        services.settings.telegram_allowed_user_id
+    )
+    supported, _ = await get_bot_thread_mode_support(getattr(context, "bot", None))
+    await update.effective_message.reply_text(
+        _build_start_text(
+            thread_mode_supported=supported,
+            thread_mode_enabled=session.thread_mode_enabled,
+            thread_mode_configured=getattr(session, "thread_mode_configured", False),
+        )
+    )
 
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -700,6 +720,7 @@ async def _authorize_and_record_chat(update: Update, context: ContextTypes.DEFAU
             user.id,
             update.effective_chat.id,
         )
+    await auto_enable_thread_mode_if_supported(context, user.id)
     return True
 
 
@@ -710,17 +731,10 @@ async def _get_thread_mode_prerequisite_error(
     if chat is None:
         return "Thread mode can only be enabled from inside a Telegram chat."
 
-    try:
-        bot_user = await context.bot.get_me()
-    except TelegramError as exc:
-        return f"Couldn't verify the bot's Threaded Mode setting: {exc}"
-
-    has_topics_enabled = getattr(bot_user, "has_topics_enabled", None)
-    if has_topics_enabled is None:
-        api_kwargs = getattr(bot_user, "api_kwargs", None)
-        if isinstance(api_kwargs, dict):
-            has_topics_enabled = api_kwargs.get("has_topics_enabled")
-    if not bool(has_topics_enabled):
+    supported, error = await get_bot_thread_mode_support(getattr(context, "bot", None))
+    if error is not None:
+        return f"Couldn't verify the bot's Threaded Mode setting: {error}"
+    if supported is not True:
         return (
             "Thread mode requires Telegram Threaded Mode to be enabled for this bot in "
             "@BotFather."
@@ -784,6 +798,38 @@ def _build_thread_mode_command_text(enabled: bool, intro: str | None = None) -> 
     sections = [intro] if intro else []
     sections.append(build_thread_mode_status(enabled))
     sections.append("Choose the routing mode below.")
+    return "\n\n".join(sections)
+
+
+def _build_start_text(
+    *,
+    thread_mode_supported: bool | None,
+    thread_mode_enabled: bool,
+    thread_mode_configured: bool,
+) -> str:
+    sections = [_START_GREETING]
+    if thread_mode_supported is False:
+        sections.append(_THREAD_MODE_DISABLED_EXPLANATION)
+    elif thread_mode_supported is True:
+        if thread_mode_enabled and not thread_mode_configured:
+            sections.append(
+                "Notice: Telegram Threaded Mode is enabled for this bot, so per-agent "
+                "thread mode was turned on automatically. Use /agents in the root chat "
+                "to create or open each agent thread."
+            )
+        elif thread_mode_enabled:
+            sections.append(
+                "Notice: Telegram Threaded Mode is enabled for this bot, and per-agent "
+                "thread mode is currently on. Use /agents in the root chat to create or "
+                "open each agent thread."
+            )
+        else:
+            sections.append(
+                "Notice: Telegram Threaded Mode is enabled for this bot, so per-agent "
+                "thread mode is available. Use /threadmode on if you want one Telegram "
+                "thread per Cursor agent."
+            )
+    sections.append(_HELP_TEXT)
     return "\n\n".join(sections)
 
 

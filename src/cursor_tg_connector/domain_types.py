@@ -25,6 +25,7 @@ class SessionState:
     telegram_chat_id: int | None = None
     active_agent_id: str | None = None
     thread_mode_enabled: bool = False
+    thread_mode_configured: bool = False
     unselected_agent_unread_mode: UnselectedAgentUnreadMode = (
         UnselectedAgentUnreadMode.COUNT
     )

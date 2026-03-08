@@ -21,7 +21,7 @@ A single-process Python service that bridges a Telegram bot with the [Cursor Clo
 | **Telegram Bot Token** | Create a bot via [@BotFather](https://t.me/BotFather) on Telegram (see [step-by-step below](#1-create-a-telegram-bot)) |
 | **Your Telegram User ID** | Send `/start` to [@userinfobot](https://t.me/userinfobot) — the numeric ID it returns is your user ID |
 | **Cursor API Key** | Generate one at [Cursor Dashboard → My User API Keys](https://cursor.com/cn/dashboard?tab=cloud-agents#my-user-api-keys) |
-| **GitHub token** *(optional)* | Create one in GitHub Settings if you want Telegram to mark PRs ready for review or merge them |
+| **GitHub token** *(optional)* | Create one in [GitHub fine-grained PAT settings](https://github.com/settings/personal-access-tokens/new) if you want Telegram to mark PRs ready for review or merge them |
 
 ### 1. Create a Telegram bot
 
@@ -45,8 +45,8 @@ You only need this if you want the bot to mark PRs ready for review or merge the
 
 **Fine-grained PAT (recommended):**
 
-1. Open GitHub → **Settings** → **Developer settings** → **Personal access tokens** → **Fine-grained tokens**.
-2. Click **Generate new token**.
+1. Open GitHub → **Settings** → **Developer settings** → **Personal access tokens** → [**Fine-grained tokens**](https://github.com/settings/personal-access-tokens).
+2. Click [**Generate new token**](https://github.com/settings/personal-access-tokens/new).
 3. Restrict it to the repository (or org repositories) the Cursor agent works on.
 4. Grant at least:
    - **Pull requests: Read and write**
@@ -55,8 +55,8 @@ You only need this if you want the bot to mark PRs ready for review or merge the
 
 **Classic PAT (alternative):**
 
-1. Open GitHub → **Settings** → **Developer settings** → **Personal access tokens** → **Tokens (classic)**.
-2. Generate a token with the `repo` scope.
+1. Open GitHub → **Settings** → **Developer settings** → **Personal access tokens** → [**Tokens (classic)**](https://github.com/settings/tokens).
+2. Generate a token with the `repo` scope from the [classic token creation page](https://github.com/settings/tokens/new).
 3. Copy it into `GITHUB_TOKEN`.
 
 ### 5. Configure the service

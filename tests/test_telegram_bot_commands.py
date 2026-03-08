@@ -80,6 +80,45 @@ class FakeListAgentService:
         return self.items
 
 
+class FakeThreadModeBot:
+    def __init__(
+        self,
+        *,
+        chat_type: str = "supergroup",
+        is_forum: bool = True,
+        users_can_create_threads: bool = False,
+        bot_status: str = "administrator",
+        bot_can_manage_topics: bool = True,
+    ) -> None:
+        self.chat_type = chat_type
+        self.is_forum = is_forum
+        self.users_can_create_threads = users_can_create_threads
+        self.bot_status = bot_status
+        self.bot_can_manage_topics = bot_can_manage_topics
+
+    async def get_chat(self, chat_id: int):
+        assert chat_id == 999
+        return SimpleNamespace(
+            id=chat_id,
+            type=self.chat_type,
+            is_forum=self.is_forum,
+            permissions=SimpleNamespace(
+                can_manage_topics=self.users_can_create_threads,
+            ),
+        )
+
+    async def get_me(self):
+        return SimpleNamespace(id=4321)
+
+    async def get_chat_member(self, chat_id: int, user_id: int):
+        assert chat_id == 999
+        assert user_id == 4321
+        return SimpleNamespace(
+            status=self.bot_status,
+            can_manage_topics=self.bot_can_manage_topics,
+        )
+
+
 def build_context(
     *,
     settings,
@@ -87,6 +126,7 @@ def build_context(
     agent_service: object,
     create_agent_service: FakeCreateAgentService | None = None,
     args: list[str] | None = None,
+    bot: FakeThreadModeBot | None = None,
 ) -> SimpleNamespace:
     services = SimpleNamespace(
         settings=settings,
@@ -95,7 +135,11 @@ def build_context(
         create_agent_service=create_agent_service or FakeCreateAgentService(state_repo),
     )
     application = SimpleNamespace(bot_data={"services": services})
-    return SimpleNamespace(application=application, args=args or [])
+    return SimpleNamespace(
+        application=application,
+        args=args or [],
+        bot=bot or FakeThreadModeBot(),
+    )
 
 
 @pytest.mark.asyncio
@@ -221,6 +265,98 @@ async def test_threadmode_command_toggles_session_flag(settings, state_repo) -> 
     session = await state_repo.get_session(settings.telegram_allowed_user_id)
     assert session.thread_mode_enabled is True
     assert "Thread mode is enabled." in message.replies[-1][0]
+
+
+@pytest.mark.asyncio
+async def test_threadmode_command_rejects_chat_without_topics(settings, state_repo) -> None:
+    message = FakeMessage()
+    update = SimpleNamespace(
+        effective_user=SimpleNamespace(id=settings.telegram_allowed_user_id),
+        effective_message=message,
+        effective_chat=SimpleNamespace(id=999),
+    )
+    agent_service = AgentService(FakeCursorClient(), state_repo)
+
+    await threadmode_command(
+        update,
+        build_context(
+            settings=settings,
+            state_repo=state_repo,
+            agent_service=agent_service,
+            args=["on"],
+            bot=FakeThreadModeBot(is_forum=False),
+        ),
+    )
+
+    session = await state_repo.get_session(settings.telegram_allowed_user_id)
+    assert session.thread_mode_enabled is False
+    assert message.replies[-1][0] == (
+        "Thread mode can only be enabled in a Telegram supergroup with Topics turned on."
+    )
+
+
+@pytest.mark.asyncio
+async def test_threadmode_command_rejects_when_users_can_create_threads(
+    settings,
+    state_repo,
+) -> None:
+    message = FakeMessage()
+    update = SimpleNamespace(
+        effective_user=SimpleNamespace(id=settings.telegram_allowed_user_id),
+        effective_message=message,
+        effective_chat=SimpleNamespace(id=999),
+    )
+    agent_service = AgentService(FakeCursorClient(), state_repo)
+
+    await threadmode_command(
+        update,
+        build_context(
+            settings=settings,
+            state_repo=state_repo,
+            agent_service=agent_service,
+            args=["on"],
+            bot=FakeThreadModeBot(users_can_create_threads=True),
+        ),
+    )
+
+    session = await state_repo.get_session(settings.telegram_allowed_user_id)
+    assert session.thread_mode_enabled is False
+    assert message.replies[-1][0] == (
+        'Thread mode requires the Telegram chat setting "Disallow users to create new '
+        'threads" to be enabled.'
+    )
+
+
+@pytest.mark.asyncio
+async def test_threadmode_command_rejects_when_bot_cannot_manage_topics(
+    settings,
+    state_repo,
+) -> None:
+    message = FakeMessage()
+    update = SimpleNamespace(
+        effective_user=SimpleNamespace(id=settings.telegram_allowed_user_id),
+        effective_message=message,
+        effective_chat=SimpleNamespace(id=999),
+    )
+    agent_service = AgentService(FakeCursorClient(), state_repo)
+
+    await threadmode_command(
+        update,
+        build_context(
+            settings=settings,
+            state_repo=state_repo,
+            agent_service=agent_service,
+            args=["on"],
+            bot=FakeThreadModeBot(bot_can_manage_topics=False),
+        ),
+    )
+
+    session = await state_repo.get_session(settings.telegram_allowed_user_id)
+    assert session.thread_mode_enabled is False
+    assert message.replies[-1][0] == (
+        "Thread mode requires the bot to have the Telegram Manage Topics "
+        "administrator permission."
+    )
 
 
 @pytest.mark.asyncio

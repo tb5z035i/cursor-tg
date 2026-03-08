@@ -88,7 +88,7 @@ The SQLite database defaults to `/data/connector.db`. Mount `/data` to persisten
 | `/unfocus` | Clear the currently selected active agent |
 | `/stop` | Stop the currently selected running agent and clear the active selection |
 | `/clear` | Mark all unread messages as read for the active agent |
-| `/threadmode` | Show status or toggle per-agent Telegram thread routing with `/threadmode on|off|status` |
+| `/threadmode` | Show status or toggle per-agent Telegram thread routing with `/threadmode on|off|status` (requires Topics enabled and user-created topics disabled) |
 | `/newagent` | Create a new agent with a 4-step wizard (model → repo → branch → prompt) |
 | `/cancel` | Abort the in-progress `/newagent` wizard |
 | `/resetdb` | Show a confirmation prompt before wiping and reinitializing local SQLite state |
@@ -114,6 +114,13 @@ enabled, follow-ups must be sent from the bound agent thread.
 ## Threaded mode
 
 Use `/threadmode on` if you want one Telegram thread/topic per Cursor agent.
+
+`/threadmode on` is only allowed when all of these are true:
+
+- The chat is a Telegram supergroup.
+- Topics are enabled for that supergroup.
+- The chat-level setting **Disallow users to create new threads** is enabled.
+- The bot is an admin with the **Manage Topics** permission.
 
 - In threaded mode, `/agents` becomes the button-based thread opener for agents.
 - `/focus` remains the non-thread-mode active-agent picker.

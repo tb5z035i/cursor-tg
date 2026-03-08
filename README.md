@@ -1,24 +1,33 @@
 # Cursor Cloud Telegram Connector
 
-A single-process Python service that bridges a Telegram bot with the [Cursor Cloud Agents API](https://cursor.com/docs/cloud-agent/api/overview), letting you create agents, receive their responses, and send follow-ups — all from Telegram.
+A single-process Python service that bridges a Telegram bot with the [Cursor Cloud Agents API](https://cursor.com/docs/cloud-agent/api/overview), so you can create agents, receive their responses, and send follow-ups directly from Telegram.
 
-## Prerequisites
+## Table of Contents
+
+- [Setup Guide](#setup-guide)
+- [Bot commands](#bot-commands)
+- [Configuration Reference](#configuration-reference)
+- [Q&A](#qa)
+- [Development](#development)
+- [Architecture](#architecture)
+
+## Setup Guide
+
+### Prerequisites
 
 | Requirement | Where to get it |
 |---|---|
 | **Python 3.12+** | [python.org](https://www.python.org/downloads/) or your system package manager |
 | **Telegram Bot Token** | Create a bot via [@BotFather](https://t.me/BotFather) on Telegram (see [step-by-step below](#1-create-a-telegram-bot)) |
 | **Your Telegram User ID** | Send `/start` to [@userinfobot](https://t.me/userinfobot) — the numeric ID it returns is your user ID |
-| **Cursor API Key** | Generate one at [Cursor Dashboard → Integrations](https://cursor.com/dashboard/integrations) |
+| **Cursor API Key** | Generate one at [Cursor Dashboard → My User API Keys](https://cursor.com/cn/dashboard?tab=cloud-agents#my-user-api-keys) |
 | **GitHub token** *(optional)* | Create one in GitHub Settings if you want Telegram to mark PRs ready for review or merge them |
-
-## Setup guide
 
 ### 1. Create a Telegram bot
 
-1. Open Telegram and search for **@BotFather**.
+1. Open Telegram and search for [**@BotFather**](https://t.me/BotFather).
 2. Send `/newbot` and follow the prompts to choose a name and username.
-3. BotFather will reply with a **token** like `123456:ABC-DEF...`. Save this — it is your `TELEGRAM_BOT_TOKEN`.
+3. BotFather will reply with a token like `123456:ABC-DEF...`. Save this as `TELEGRAM_BOT_TOKEN`.
 
 ### 2. Get your Telegram user ID
 
@@ -26,9 +35,9 @@ Send `/start` to [@userinfobot](https://t.me/userinfobot). It replies with your 
 
 ### 3. Create a Cursor API key
 
-1. Go to [cursor.com/dashboard/integrations](https://cursor.com/dashboard/integrations).
-2. Create a new Cloud Agent API key.
-3. Copy the key — it is your `CURSOR_API_KEY`.
+1. Go to [Cursor Dashboard → My User API Keys](https://cursor.com/cn/dashboard?tab=cloud-agents#my-user-api-keys).
+2. Create a new user API key.
+3. Copy the key and save it as `CURSOR_API_KEY`.
 
 ### 4. Create an optional GitHub token for PR actions
 
@@ -42,7 +51,7 @@ You only need this if you want the bot to mark PRs ready for review or merge the
 4. Grant at least:
    - **Pull requests: Read and write**
    - **Contents: Write**
-5. Copy the token — use it as `GITHUB_TOKEN` (or `GITHUB_PAT`).
+5. Copy the token and use it as `GITHUB_TOKEN` (or `GITHUB_PAT`).
 
 **Classic PAT (alternative):**
 
@@ -56,22 +65,22 @@ You only need this if you want the bot to mark PRs ready for review or merge the
 cp .env.example .env
 ```
 
-Open `.env` and fill in the three required values:
+Open `.env` and start with this minimal copy-paste configuration:
 
-```
+```env
 TELEGRAM_BOT_TOKEN=123456:ABC-DEF...
 TELEGRAM_ALLOWED_USER_ID=987654321
 CURSOR_API_KEY=cur_...
 ```
 
-Optional PR action settings:
+If you want PR actions from Telegram, also add:
 
-```
+```env
 GITHUB_TOKEN=github_pat_...
 GITHUB_DEFAULT_MERGE_METHOD=merge
 ```
 
-All other settings have sensible defaults. See [Configuration reference](#configuration-reference) for details.
+See full [Configuration Reference](#configuration-reference) for details.
 
 By default the service reads `.env` from the working directory. To load from a different path (useful for container deployments), use either:
 
@@ -127,14 +136,33 @@ The SQLite database defaults to `/data/connector.db`. Mount `/data` to persisten
 | `/resetdb` | Show a confirmation prompt before wiping and reinitializing local SQLite state |
 | `/help` | Show available commands |
 
-Any other text message is forwarded as a follow-up to the active agent. When thread mode is
-enabled, follow-ups must be sent from the bound agent thread.
+Any other text message is forwarded as a follow-up to the active agent. When thread mode is enabled, follow-ups must be sent from the bound agent thread.
 
-## Pull request actions
+## Configuration Reference
 
-Cursor's public Cloud Agent API currently exposes the PR URL (`target.prUrl`), but it does not
-expose public endpoints to mark that PR ready for review or merge it. To cover that gap, this
-connector can optionally call the GitHub REST API directly when a GitHub token is configured.
+| Variable | Default | Description |
+|---|---|---|
+| `TELEGRAM_BOT_TOKEN` | *required* | Bot token from @BotFather |
+| `TELEGRAM_ALLOWED_USER_ID` | *required* | Your Telegram numeric user ID |
+| `CURSOR_API_KEY` | *required* | Cursor Cloud API key |
+| `GITHUB_TOKEN` / `GITHUB_PAT` | optional | GitHub token used for PR actions (`/pr`, `/ready`, `/merge`) |
+| `GITHUB_API_BASE_URL` | `https://api.github.com` | GitHub API base URL |
+| `GITHUB_DEFAULT_MERGE_METHOD` | `merge` | Merge method used by the inline merge button (`merge`, `squash`, or `rebase`) |
+| `TELEGRAM_CHAT_ID` | auto-detected | Override the chat ID; normally discovered from your first message to the bot |
+| `CURSOR_API_BASE_URL` | `https://api.cursor.com` | Cursor API base URL |
+| `CURSOR_API_MAX_RETRIES` | `3` | Max retries on transient API errors (429, 5xx) |
+| `CURSOR_API_RETRY_BACKOFF_SECONDS` | `1` | Base backoff between retries (doubled each attempt) |
+| `SQLITE_PATH` | `/data/connector.db` | Path to the SQLite database file |
+| `POLL_INTERVAL_SECONDS` | `10` | Seconds between background polling cycles |
+| `FOLLOWUP_POLL_INTERVAL_SECONDS` | `5` | Seconds between checks for agent response after a follow-up |
+| `FOLLOWUP_POLL_TIMEOUT_SECONDS` | `180` | Max seconds to wait for an agent response inline |
+| `LOG_LEVEL` | `INFO` | Logging level (`DEBUG`, `INFO`, `WARNING`, `ERROR`) |
+
+## Q&A
+
+### Pull request actions
+
+Cursor's public Cloud Agent API currently exposes the PR URL (`target.prUrl`), but it does not expose public endpoints to mark that PR ready for review or merge it. To cover that gap, this connector can optionally call the GitHub REST API directly when a GitHub token is configured.
 
 When `GITHUB_TOKEN` (or `GITHUB_PAT`) is set:
 
@@ -153,10 +181,9 @@ Recommended GitHub token choices:
   - **Contents: Write** (needed for merging)
 - **Classic PAT** with `repo` scope also works.
 
-If no GitHub token is configured, the bot still shows the PR link, but PR state changes remain
-read-only.
+If no GitHub token is configured, the bot still shows the PR link, but PR state changes remain read-only.
 
-## How it works
+### How it works
 
 - The service polls the Cursor API every 10 seconds (configurable) for running agents.
 - **Active agent**: unread assistant messages are delivered as Telegram messages with Markdown rendering, up to 10 per poll cycle.
@@ -170,7 +197,7 @@ read-only.
 - Follow-up messages you send are forwarded to the Cursor agent; the service polls for a response for up to 3 minutes.
 - All state (active agent, unread display preference, delivery cursors, wizard progress, and thread bindings) is stored in a local SQLite database.
 
-## Threaded mode
+### Threaded mode
 
 Use `/threadmode on` if you want one Telegram thread/topic per Cursor agent.
 
@@ -191,38 +218,17 @@ Use `/threadmode on` if you want one Telegram thread/topic per Cursor agent.
 - `/close` closes the current Telegram topic and removes its local binding. It does not delete the Cursor agent.
 - `/newagent` must be started from the root chat, not from inside an existing agent thread.
 
-Use `/threadmode off` to return to the legacy single-active-agent chat flow. Existing thread
-bindings are preserved.
+Use `/threadmode off` to return to the legacy single-active-agent chat flow. Existing thread bindings are preserved.
 
-## Resetting local state
+### Resetting local state
 
-Use `/resetdb` to wipe the bot's local SQLite state and recreate the schema. The bot will ask
-for inline-button confirmation before doing anything destructive.
+Use `/resetdb` to wipe the bot's local SQLite state and recreate the schema. The bot will ask for inline-button confirmation before doing anything destructive.
 
-This clears local session data, wizard state, unread notices, delivery cursors, and stored
-agent/thread bindings. It does not stop or delete Cursor agents in Cursor Cloud.
-
-## Configuration reference
-
-| Variable | Default | Description |
-|---|---|---|
-| `TELEGRAM_BOT_TOKEN` | *required* | Bot token from @BotFather |
-| `TELEGRAM_ALLOWED_USER_ID` | *required* | Your Telegram numeric user ID |
-| `CURSOR_API_KEY` | *required* | Cursor Cloud API key |
-| `GITHUB_TOKEN` / `GITHUB_PAT` | optional | GitHub token used for PR actions (`/pr`, `/ready`, `/merge`) |
-| `GITHUB_API_BASE_URL` | `https://api.github.com` | GitHub API base URL |
-| `GITHUB_DEFAULT_MERGE_METHOD` | `merge` | Merge method used by the inline merge button (`merge`, `squash`, or `rebase`) |
-| `TELEGRAM_CHAT_ID` | auto-detected | Override the chat ID; normally discovered from your first message to the bot |
-| `CURSOR_API_BASE_URL` | `https://api.cursor.com` | Cursor API base URL |
-| `CURSOR_API_MAX_RETRIES` | `3` | Max retries on transient API errors (429, 5xx) |
-| `CURSOR_API_RETRY_BACKOFF_SECONDS` | `1` | Base backoff between retries (doubled each attempt) |
-| `SQLITE_PATH` | `/data/connector.db` | Path to the SQLite database file |
-| `POLL_INTERVAL_SECONDS` | `10` | Seconds between background polling cycles |
-| `FOLLOWUP_POLL_INTERVAL_SECONDS` | `5` | Seconds between checks for agent response after a follow-up |
-| `FOLLOWUP_POLL_TIMEOUT_SECONDS` | `180` | Max seconds to wait for an agent response inline |
-| `LOG_LEVEL` | `INFO` | Logging level (`DEBUG`, `INFO`, `WARNING`, `ERROR`) |
+This clears local session data, wizard state, unread notices, delivery cursors, and stored agent/thread bindings. It does not stop or delete Cursor agents in Cursor Cloud.
 
 ## Development
+
+### Local development
 
 ```bash
 python3.12 -m venv .venv
@@ -237,7 +243,7 @@ pytest
 ruff check .
 ```
 
-## Docker deployment
+### Docker deployment
 
 **Option A — pass env vars directly (works with `docker run` and ECI):**
 
@@ -267,7 +273,7 @@ docker run -d \
 - Keep to a **single replica** — SQLite is local and not shared.
 - Store credentials as environment variables or container secrets.
 
-## Docker image releases
+### Docker image releases
 
 GitHub Actions publishes Docker images to Docker Hub in two cases:
 

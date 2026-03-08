@@ -9,6 +9,7 @@ from cursor_tg_connector.domain_types import AgentListItem, AgentThreadBinding
 from cursor_tg_connector.services_agent_service import AgentService
 from cursor_tg_connector.telegram_bot_commands import (
     agents_command,
+    help_command,
     new_agent_command,
     resetdb_command,
     stop_command,
@@ -96,6 +97,28 @@ def build_context(
     )
     application = SimpleNamespace(bot_data={"services": services})
     return SimpleNamespace(application=application, args=args or [])
+
+
+@pytest.mark.asyncio
+async def test_help_command_includes_project_github_url(settings, state_repo) -> None:
+    message = FakeMessage()
+    update = SimpleNamespace(
+        effective_user=SimpleNamespace(id=settings.telegram_allowed_user_id),
+        effective_message=message,
+        effective_chat=SimpleNamespace(id=999),
+    )
+
+    await help_command(
+        update,
+        build_context(
+            settings=settings,
+            state_repo=state_repo,
+            agent_service=FakeListAgentService([]),
+        ),
+    )
+
+    assert len(message.replies) == 1
+    assert "GitHub: https://github.com/tb5z035i/cursor-tg" in message.replies[0][0]
 
 
 @pytest.mark.asyncio

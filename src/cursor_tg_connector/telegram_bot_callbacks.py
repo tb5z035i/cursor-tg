@@ -10,6 +10,7 @@ from cursor_tg_connector.telegram_bot_common import (
     render_branch_keyboard,
     render_model_keyboard,
     render_repository_keyboard,
+    render_threadmode_keyboard,
 )
 from cursor_tg_connector.telegram_bot_constants import (
     BRANCH_PAGE_PREFIX,
@@ -21,11 +22,13 @@ from cursor_tg_connector.telegram_bot_constants import (
     RESET_DB_CANCEL_PREFIX,
     RESET_DB_CONFIRM_PREFIX,
     SWITCH_AGENT_PREFIX,
+    THREADMODE_SET_PREFIX,
 )
 from cursor_tg_connector.telegram_threads import ensure_agent_thread
 from cursor_tg_connector.utils_formatting import (
     build_reset_db_cancelled,
     build_reset_db_success,
+    build_thread_mode_status,
     build_thread_opened_message,
     build_thread_ready_message,
 )
@@ -57,6 +60,9 @@ async def callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         return
     if data == RESET_DB_CANCEL_PREFIX:
         await _cancel_reset_db(update)
+        return
+    if data.startswith(THREADMODE_SET_PREFIX):
+        await _set_threadmode(update, context, data[len(THREADMODE_SET_PREFIX) :])
         return
     if data.startswith(MODEL_PAGE_PREFIX):
         await _show_model_page(update, context, int(data[len(MODEL_PAGE_PREFIX) :]))
@@ -155,6 +161,28 @@ async def _cancel_reset_db(update: Update) -> None:
     query = update.callback_query
     await query.answer("Cancelled")
     await query.edit_message_text(build_reset_db_cancelled())
+
+
+async def _set_threadmode(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    mode: str,
+) -> None:
+    query = update.callback_query
+    services = get_services(context)
+    enabled = mode == "on"
+    updated = await services.create_agent_service.state_repo.set_thread_mode_enabled(
+        services.settings.telegram_allowed_user_id,
+        enabled,
+    )
+    await query.answer(f"Thread mode {'enabled' if enabled else 'disabled'}")
+    message = build_thread_mode_status(updated.thread_mode_enabled)
+    if not updated.thread_mode_enabled:
+        message += "\n\nExisting thread bindings were preserved."
+    await query.edit_message_text(
+        message,
+        reply_markup=render_threadmode_keyboard(updated.thread_mode_enabled),
+    )
 
 
 async def _show_model_page(update: Update, context: ContextTypes.DEFAULT_TYPE, page: int) -> None:

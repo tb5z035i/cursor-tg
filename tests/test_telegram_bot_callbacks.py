@@ -13,6 +13,7 @@ from cursor_tg_connector.telegram_bot_common import (
     RESET_DB_CONFIRM_PREFIX,
     SWITCH_AGENT_PREFIX,
 )
+from cursor_tg_connector.telegram_bot_constants import THREADMODE_SET_PREFIX
 
 
 class FakeBot:
@@ -198,3 +199,30 @@ async def test_switch_agent_callback_creates_thread_in_thread_mode(settings, sta
         for message in bot.messages
     )
     assert any(message[1] == 88 and "hello from agent" in message[2] for message in bot.messages)
+
+
+@pytest.mark.asyncio
+async def test_threadmode_callback_toggles_enabled_state(settings, state_repo) -> None:
+    query = FakeCallbackQuery(f"{THREADMODE_SET_PREFIX}on")
+    update = SimpleNamespace(
+        effective_user=SimpleNamespace(id=settings.telegram_allowed_user_id),
+        effective_chat=SimpleNamespace(id=999),
+        callback_query=query,
+    )
+
+    await callback_router(
+        update,
+        build_context(
+            settings=settings,
+            state_repo=state_repo,
+            bot=FakeBot(),
+            agent_service=AgentService(FakeCursorClient(), state_repo),
+        ),
+    )
+
+    session = await state_repo.get_session(settings.telegram_allowed_user_id)
+    assert session.thread_mode_enabled is True
+    assert query.edits == [
+        "Thread mode is enabled.\n\n"
+        "Use /agents in the root chat to create or open an agent thread."
+    ]

@@ -14,6 +14,7 @@ from cursor_tg_connector.telegram_bot_common import (
     render_agent_keyboard,
     render_model_keyboard,
     render_reset_db_keyboard,
+    render_threadmode_keyboard,
 )
 from cursor_tg_connector.utils_formatting import (
     build_agent_info_message,
@@ -38,7 +39,7 @@ _HELP_TEXT = (
     "• Send /configure_unread full|count|none to control non-active agent notices.\n"
     "• Send /unfocus to clear the current active agent selection.\n"
     "• Send /stop to stop the currently selected running agent.\n"
-    "• Send /threadmode on to route each agent into its own Telegram thread.\n"
+    "• Send /threadmode to toggle per-agent Telegram threads with a button.\n"
     "• Send /newagent to create a new agent (model → repo → branch → prompt).\n"
     "• Send any text message to follow up with the active agent or from inside an agent thread.\n"
     "• In thread mode, root-chat notices can still appear for unbound agents based on "
@@ -334,39 +335,13 @@ async def threadmode_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
         return
 
     services = get_services(context)
-    args = [arg.lower() for arg in getattr(context, "args", [])]
     current = await services.create_agent_service.state_repo.get_session(
         services.settings.telegram_allowed_user_id
     )
-
-    if not args or args[0] == "status":
-        await update.effective_message.reply_text(
-            build_thread_mode_status(current.thread_mode_enabled)
-        )
-        return
-
-    if args[0] == "on":
-        updated = await services.create_agent_service.state_repo.set_thread_mode_enabled(
-            services.settings.telegram_allowed_user_id,
-            True,
-        )
-        await update.effective_message.reply_text(
-            build_thread_mode_status(updated.thread_mode_enabled)
-        )
-        return
-
-    if args[0] == "off":
-        updated = await services.create_agent_service.state_repo.set_thread_mode_enabled(
-            services.settings.telegram_allowed_user_id,
-            False,
-        )
-        await update.effective_message.reply_text(
-            build_thread_mode_status(updated.thread_mode_enabled)
-            + "\n\nExisting thread bindings were preserved."
-        )
-        return
-
-    await update.effective_message.reply_text("Usage: /threadmode [on|off|status]")
+    await update.effective_message.reply_text(
+        build_thread_mode_status(current.thread_mode_enabled),
+        reply_markup=render_threadmode_keyboard(current.thread_mode_enabled),
+    )
 
 
 async def resetdb_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

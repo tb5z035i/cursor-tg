@@ -88,7 +88,7 @@ The SQLite database defaults to `/data/connector.db`. Mount `/data` to persisten
 | `/unfocus` | Clear the currently selected active agent |
 | `/stop` | Stop the currently selected running agent and clear the active selection |
 | `/clear` | Mark all unread messages as read for the active agent |
-| `/threadmode` | Show status or toggle per-agent Telegram thread routing with `/threadmode on|off|status` |
+| `/threadmode` | Show current status and toggle per-agent Telegram thread routing with an inline button |
 | `/newagent` | Create a new agent with a 4-step wizard (model → repo → branch → prompt) |
 | `/cancel` | Abort the in-progress `/newagent` wizard |
 | `/resetdb` | Show a confirmation prompt before wiping and reinitializing local SQLite state |
@@ -113,7 +113,7 @@ enabled, follow-ups must be sent from the bound agent thread.
 
 ## Threaded mode
 
-Use `/threadmode on` if you want one Telegram thread/topic per Cursor agent.
+Use `/threadmode` if you want to inspect or toggle one Telegram thread/topic per Cursor agent.
 
 - In threaded mode, `/agents` becomes the button-based thread opener for agents.
 - `/focus` remains the non-thread-mode active-agent picker.
@@ -124,8 +124,8 @@ Use `/threadmode on` if you want one Telegram thread/topic per Cursor agent.
 - `/current`, `/clear`, and `/stop` only work inside a bound thread while thread mode is enabled.
 - `/newagent` must be started from the root chat, not from inside an existing agent thread.
 
-Use `/threadmode off` to return to the legacy single-active-agent chat flow. Existing thread
-bindings are preserved.
+Use the inline toggle in `/threadmode` to return to the legacy single-active-agent chat flow.
+Existing thread bindings are preserved.
 
 ## Resetting local state
 

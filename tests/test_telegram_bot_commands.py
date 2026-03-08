@@ -214,13 +214,13 @@ async def test_threadmode_command_toggles_session_flag(settings, state_repo) -> 
             settings=settings,
             state_repo=state_repo,
             agent_service=agent_service,
-            args=["on"],
         ),
     )
 
     session = await state_repo.get_session(settings.telegram_allowed_user_id)
-    assert session.thread_mode_enabled is True
-    assert "Thread mode is enabled." in message.replies[-1][0]
+    assert session.thread_mode_enabled is False
+    assert "Thread mode is disabled." in message.replies[-1][0]
+    assert message.replies[-1][1]["reply_markup"] is not None
 
 
 @pytest.mark.asyncio

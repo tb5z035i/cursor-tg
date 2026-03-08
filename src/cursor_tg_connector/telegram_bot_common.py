@@ -21,6 +21,7 @@ from cursor_tg_connector.telegram_bot_constants import (
     RESET_DB_CANCEL_PREFIX,
     RESET_DB_CONFIRM_PREFIX,
     SWITCH_AGENT_PREFIX,
+    THREADMODE_SET_PREFIX,
 )
 
 BOT_COMMANDS: list[tuple[str, str]] = [
@@ -126,6 +127,14 @@ def render_reset_db_keyboard() -> InlineKeyboardMarkup:
                 InlineKeyboardButton("Cancel", callback_data=RESET_DB_CANCEL_PREFIX),
             ]
         ]
+    )
+
+
+def render_threadmode_keyboard(enabled: bool) -> InlineKeyboardMarkup:
+    next_state = "off" if enabled else "on"
+    label = "Turn thread mode OFF" if enabled else "Turn thread mode ON"
+    return InlineKeyboardMarkup(
+        [[InlineKeyboardButton(label, callback_data=f"{THREADMODE_SET_PREFIX}{next_state}")]]
     )
 
 

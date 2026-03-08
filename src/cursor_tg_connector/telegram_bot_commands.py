@@ -8,6 +8,7 @@ from cursor_tg_connector.cursor_api_client import CursorApiError
 from cursor_tg_connector.domain_types import UnselectedAgentUnreadMode
 from cursor_tg_connector.services_agent_service import AgentStopError
 from cursor_tg_connector.services_create_agent_service import CreateAgentError
+from cursor_tg_connector.services_notification import TelegramNotifier
 from cursor_tg_connector.telegram_bot_common import (
     BOT_COMMANDS,
     get_message_thread_id,
@@ -17,12 +18,14 @@ from cursor_tg_connector.telegram_bot_common import (
     render_reset_db_keyboard,
 )
 from cursor_tg_connector.utils_formatting import (
+    build_active_agent_message,
     build_agent_info_message,
     build_agents_summary_message,
     build_reset_db_prompt,
     build_thread_command_guidance,
     build_thread_mode_guidance,
     build_thread_mode_status,
+    build_user_history_message,
     format_command_list,
 )
 
@@ -37,6 +40,7 @@ _HELP_TEXT = (
     "\n"
     "Usage:\n"
     "• Send /agents to view agents. In thread mode it becomes the thread opener.\n"
+    "• Send /history <count> to replay the last N conversation messages.\n"
     "• Send /focus to choose the active agent from clickable options in non-thread mode.\n"
     "• Send /configure_unread full|count|none to control non-active agent notices.\n"
     "• Send /unfocus to clear the current active agent selection.\n"
@@ -56,6 +60,8 @@ _STOP_HELP_TEXT = (
     "\n"
     "Use /focus to pick a running agent, then send /stop to stop it."
 )
+
+_HISTORY_USAGE_TEXT = "Usage: /history <count> (count must be a positive integer)"
 
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -134,6 +140,69 @@ async def clear_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     await update.effective_message.reply_text(
         f"Cleared all unread messages for {agent_name}."
     )
+
+
+async def history_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not await _authorize_and_record_chat(update, context):
+        return
+
+    message = update.effective_message
+    if message is None:
+        return
+
+    count = _parse_history_count(getattr(context, "args", []))
+    if count is None:
+        await message.reply_text(_HISTORY_USAGE_TEXT)
+        return
+
+    services = get_services(context)
+    session = await services.create_agent_service.state_repo.get_session(
+        services.settings.telegram_allowed_user_id
+    )
+    message_thread_id = get_message_thread_id(update)
+    if session.thread_mode_enabled:
+        agent_id = await services.agent_service.resolve_context_agent_id(
+            telegram_user_id=services.settings.telegram_allowed_user_id,
+            chat_id=update.effective_chat.id,
+            message_thread_id=message_thread_id,
+        )
+        if agent_id is None:
+            await message.reply_text(build_thread_command_guidance())
+            return
+    else:
+        agent = await services.agent_service.ensure_active_agent_exists(
+            services.settings.telegram_allowed_user_id,
+        )
+        if agent is None:
+            await message.reply_text(
+                "No active agent selected. Use /focus to pick one."
+            )
+            return
+        agent_id = agent.id
+
+    agent, history_messages, assistant_total = await services.agent_service.get_recent_history(
+        agent_id,
+        count,
+    )
+    if not history_messages:
+        await message.reply_text(f"No conversation history found for {agent.name or agent.id}.")
+        await services.agent_service.mark_history_delivered(agent_id, assistant_total)
+        return
+
+    notifier = TelegramNotifier(context.bot)
+    for history_message in history_messages:
+        rendered = (
+            build_user_history_message(history_message.text)
+            if history_message.type == "user_message"
+            else build_active_agent_message(agent, history_message.text)
+        )
+        await notifier.send_text(
+            update.effective_chat.id,
+            rendered,
+            message_thread_id=message_thread_id if session.thread_mode_enabled else None,
+        )
+
+    await services.agent_service.mark_history_delivered(agent_id, assistant_total)
 
 
 async def configure_unread_command(
@@ -464,6 +533,16 @@ def _parse_unread_mode(value: str) -> UnselectedAgentUnreadMode | None:
         "hide": UnselectedAgentUnreadMode.NONE,
     }
     return aliases.get(normalized)
+
+
+def _parse_history_count(args: list[str]) -> int | None:
+    if len(args) != 1:
+        return None
+    try:
+        count = int(args[0])
+    except ValueError:
+        return None
+    return count if count > 0 else None
 
 
 def _describe_unread_mode(mode: UnselectedAgentUnreadMode) -> str:

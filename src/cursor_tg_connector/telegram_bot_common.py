@@ -25,6 +25,7 @@ from cursor_tg_connector.telegram_bot_constants import (
 
 BOT_COMMANDS: list[tuple[str, str]] = [
     ("current", "Show info about the current active agent"),
+    ("history", "Show the last N conversation messages"),
     ("agents", "List agents or open their thread in threaded mode"),
     ("focus", "Choose the active agent from clickable options"),
     ("configure_unread", "Configure unread messages for unselected agents"),

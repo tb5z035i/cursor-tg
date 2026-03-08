@@ -94,6 +94,10 @@ def build_active_agent_message(agent: Agent, text: str) -> str:
     return f"> **{agent.name or agent.id}**\n{text}".strip()
 
 
+def build_user_history_message(text: str) -> str:
+    return f"> _You_\n{text}".strip()
+
+
 def build_agent_thread_name(agent: Agent) -> str:
     repo_name = shorten_repository_name(agent.source.repository).split("/")[-1]
     branch = (agent.source.ref or "unknown")[:32]

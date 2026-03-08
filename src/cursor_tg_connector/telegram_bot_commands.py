@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from telegram import Update
+from telegram.error import TelegramError
 from telegram.ext import ContextTypes
 
 from cursor_tg_connector.cursor_api_client import CursorApiError
@@ -350,6 +351,10 @@ async def threadmode_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
         return
 
     if args[0] == "on":
+        prerequisite_error = await _get_thread_mode_prerequisite_error(update, context)
+        if prerequisite_error is not None:
+            await update.effective_message.reply_text(prerequisite_error)
+            return
         updated = await services.create_agent_service.state_repo.set_thread_mode_enabled(
             services.settings.telegram_allowed_user_id,
             True,
@@ -395,6 +400,56 @@ async def _authorize_and_record_chat(update: Update, context: ContextTypes.DEFAU
             update.effective_chat.id,
         )
     return True
+
+
+async def _get_thread_mode_prerequisite_error(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> str | None:
+    chat = update.effective_chat
+    if chat is None:
+        return "Thread mode can only be enabled from inside a Telegram chat."
+
+    try:
+        chat_info = await context.bot.get_chat(chat.id)
+    except TelegramError as exc:
+        return f"Couldn't verify Telegram topic settings for this chat: {exc}"
+
+    if getattr(chat_info, "type", None) != "supergroup" or not bool(
+        getattr(chat_info, "is_forum", False)
+    ):
+        return (
+            "Thread mode can only be enabled in a Telegram supergroup with Topics turned on."
+        )
+
+    permissions = getattr(chat_info, "permissions", None)
+    if bool(getattr(permissions, "can_manage_topics", False)):
+        return (
+            'Thread mode requires the Telegram chat setting "Disallow users to create '
+            'new threads" to be enabled.'
+        )
+
+    try:
+        bot_user = await context.bot.get_me()
+        bot_member = await context.bot.get_chat_member(chat.id, bot_user.id)
+    except TelegramError as exc:
+        return f"Couldn't verify the bot's topic permissions for this chat: {exc}"
+
+    member_status = getattr(bot_member, "status", "")
+    if member_status not in {"administrator", "creator", "owner"}:
+        return (
+            "Thread mode requires the bot to be a chat admin with permission to manage "
+            "topics."
+        )
+
+    if member_status == "administrator" and not bool(
+        getattr(bot_member, "can_manage_topics", False)
+    ):
+        return (
+            "Thread mode requires the bot to have the Telegram Manage Topics "
+            "administrator permission."
+        )
+
+    return None
 
 
 def _parse_unread_mode(value: str) -> UnselectedAgentUnreadMode | None:

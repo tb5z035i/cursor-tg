@@ -206,11 +206,14 @@ docker run -d \
 
 ## Docker image releases
 
-Pushing a new Git tag whose commit is reachable from `main` triggers GitHub Actions to build and
-publish the Docker image to Docker Hub as:
+GitHub Actions publishes Docker images to Docker Hub in two cases:
 
-- `DOCKER_HUB_USER/cursor-tg-connector:<tag>`
-- `DOCKER_HUB_USER/cursor-tg-connector:latest`
+- Every push to `main` publishes:
+  - `DOCKER_HUB_USER/cursor-tg-connector:latest`
+
+- Pushing a new Git tag whose commit is reachable from `main` publishes:
+  - `DOCKER_HUB_USER/cursor-tg-connector:<tag>`
+  - `DOCKER_HUB_USER/cursor-tg-connector:latest`
 
 The workflow uses the `DOCKER_HUB_USER` and `DOCKER_HUB_PAT` GitHub secrets for authentication.
 

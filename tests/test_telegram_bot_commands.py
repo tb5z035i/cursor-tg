@@ -171,42 +171,19 @@ class FakeThreadModeBot:
     def __init__(
         self,
         *,
-        chat_type: str = "supergroup",
-        is_forum: bool = True,
-        users_can_create_threads: bool = False,
-        bot_status: str = "administrator",
-        bot_can_manage_topics: bool = True,
+        has_topics_enabled: bool = True,
+        get_me_error: Exception | None = None,
         close_error: Exception | None = None,
     ) -> None:
-        self.chat_type = chat_type
-        self.is_forum = is_forum
-        self.users_can_create_threads = users_can_create_threads
-        self.bot_status = bot_status
-        self.bot_can_manage_topics = bot_can_manage_topics
+        self.has_topics_enabled = has_topics_enabled
+        self.get_me_error = get_me_error
         self.close_error = close_error
         self.closed_topics: list[tuple[int, int]] = []
 
-    async def get_chat(self, chat_id: int):
-        assert chat_id == 999
-        return SimpleNamespace(
-            id=chat_id,
-            type=self.chat_type,
-            is_forum=self.is_forum,
-            permissions=SimpleNamespace(
-                can_manage_topics=self.users_can_create_threads,
-            ),
-        )
-
     async def get_me(self):
-        return SimpleNamespace(id=4321)
-
-    async def get_chat_member(self, chat_id: int, user_id: int):
-        assert chat_id == 999
-        assert user_id == 4321
-        return SimpleNamespace(
-            status=self.bot_status,
-            can_manage_topics=self.bot_can_manage_topics,
-        )
+        if self.get_me_error is not None:
+            raise self.get_me_error
+        return SimpleNamespace(id=4321, has_topics_enabled=self.has_topics_enabled)
 
     async def close_forum_topic(self, chat_id: int, message_thread_id: int) -> bool:
         self.closed_topics.append((chat_id, message_thread_id))
@@ -528,35 +505,7 @@ async def test_history_command_requires_positive_integer_count(settings, state_r
 
 
 @pytest.mark.asyncio
-async def test_threadmode_command_rejects_chat_without_topics(settings, state_repo) -> None:
-    message = FakeMessage()
-    update = SimpleNamespace(
-        effective_user=SimpleNamespace(id=settings.telegram_allowed_user_id),
-        effective_message=message,
-        effective_chat=SimpleNamespace(id=999),
-    )
-    agent_service = AgentService(FakeCursorClient(), state_repo)
-
-    await threadmode_command(
-        update,
-        build_context(
-            settings=settings,
-            state_repo=state_repo,
-            agent_service=agent_service,
-            args=["on"],
-            bot=FakeThreadModeBot(is_forum=False),
-        ),
-    )
-
-    session = await state_repo.get_session(settings.telegram_allowed_user_id)
-    assert session.thread_mode_enabled is False
-    text, kwargs = message.replies[-1]
-    assert "Thread mode can only be enabled in a Telegram supergroup with Topics turned on." in text
-    assert kwargs["reply_markup"] is not None
-
-
-@pytest.mark.asyncio
-async def test_threadmode_command_rejects_when_users_can_create_threads(
+async def test_threadmode_command_rejects_when_bot_threaded_mode_is_disabled(
     settings,
     state_repo,
 ) -> None:
@@ -575,7 +524,7 @@ async def test_threadmode_command_rejects_when_users_can_create_threads(
             state_repo=state_repo,
             agent_service=agent_service,
             args=["on"],
-            bot=FakeThreadModeBot(users_can_create_threads=True),
+            bot=FakeThreadModeBot(has_topics_enabled=False),
         ),
     )
 
@@ -583,15 +532,15 @@ async def test_threadmode_command_rejects_when_users_can_create_threads(
     assert session.thread_mode_enabled is False
     text, kwargs = message.replies[-1]
     assert (
-        'Thread mode requires the Telegram chat setting "Disallow users to create new '
-        'threads" to be enabled.'
+        "Thread mode requires Telegram Threaded Mode to be enabled for this bot in "
+        "@BotFather."
         in text
     )
     assert kwargs["reply_markup"] is not None
 
 
 @pytest.mark.asyncio
-async def test_threadmode_command_rejects_when_bot_cannot_manage_topics(
+async def test_threadmode_command_rejects_when_bot_mode_cannot_be_verified(
     settings,
     state_repo,
 ) -> None:
@@ -610,18 +559,14 @@ async def test_threadmode_command_rejects_when_bot_cannot_manage_topics(
             state_repo=state_repo,
             agent_service=agent_service,
             args=["on"],
-            bot=FakeThreadModeBot(bot_can_manage_topics=False),
+            bot=FakeThreadModeBot(get_me_error=TelegramError("boom")),
         ),
     )
 
     session = await state_repo.get_session(settings.telegram_allowed_user_id)
     assert session.thread_mode_enabled is False
     text, kwargs = message.replies[-1]
-    assert (
-        "Thread mode requires the bot to have the Telegram Manage Topics "
-        "administrator permission."
-        in text
-    )
+    assert "Couldn't verify the bot's Threaded Mode setting: boom" in text
     assert kwargs["reply_markup"] is not None
 
 

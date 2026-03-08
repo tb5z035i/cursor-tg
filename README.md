@@ -21,7 +21,7 @@ A single-process Python service that bridges a Telegram bot with the [Cursor Clo
 | **Telegram Bot Token** | Create a bot via [@BotFather](https://t.me/BotFather) on Telegram (see [step-by-step below](#1-create-a-telegram-bot)) |
 | **Your Telegram User ID** | Send `/start` to [@userinfobot](https://t.me/userinfobot) — the numeric ID it returns is your user ID |
 | **Cursor API Key** | Generate one at [Cursor Dashboard → My User API Keys](https://cursor.com/cn/dashboard?tab=cloud-agents#my-user-api-keys) |
-| **GitHub token** *(optional)* | Create one in GitHub Settings if you want Telegram to mark PRs ready for review or merge them |
+| **GitHub token** *(optional)* | Create one in [GitHub fine-grained PAT settings](https://github.com/settings/personal-access-tokens/new) if you want Telegram to mark PRs ready for review or merge them |
 
 ### 1. Create a Telegram bot
 
@@ -45,18 +45,18 @@ You only need this if you want the bot to mark PRs ready for review or merge the
 
 **Fine-grained PAT (recommended):**
 
-1. Open GitHub → **Settings** → **Developer settings** → **Personal access tokens** → **Fine-grained tokens**.
-2. Click **Generate new token**.
+1. Open GitHub → **Settings** → **Developer settings** → **Personal access tokens** → [**Fine-grained tokens**](https://github.com/settings/personal-access-tokens).
+2. Click [**Generate new token**](https://github.com/settings/personal-access-tokens/new).
 3. Restrict it to the repository (or org repositories) the Cursor agent works on.
-4. Grant at least:
-   - **Pull requests: Read and write**
-   - **Contents: Write**
+4. Under **Repository permissions**, grant at least:
+   - **Pull requests: Read and write** for PR status reads and the `/ready` action
+   - **Contents: Read and write** for the `/merge` action
 5. Copy the token and use it as `GITHUB_TOKEN` (or `GITHUB_PAT`).
 
 **Classic PAT (alternative):**
 
-1. Open GitHub → **Settings** → **Developer settings** → **Personal access tokens** → **Tokens (classic)**.
-2. Generate a token with the `repo` scope.
+1. Open GitHub → **Settings** → **Developer settings** → **Personal access tokens** → [**Tokens (classic)**](https://github.com/settings/tokens).
+2. Generate a token with the `repo` scope from the [classic token creation page](https://github.com/settings/tokens/new).
 3. Copy it into `GITHUB_TOKEN`.
 
 ### 5. Configure the service
@@ -127,7 +127,7 @@ The SQLite database defaults to `/data/connector.db`. Mount `/data` to persisten
 | `/stop` | Stop the currently selected running agent and clear the active selection |
 | `/clear` | Mark all unread messages as read for the active agent |
 | `/close` | Close the current bound Telegram thread/topic in threaded mode without deleting the Cursor agent |
-| `/threadmode` | Show status or toggle per-agent Telegram thread routing with `/threadmode on|off|status` (requires Topics enabled and user-created topics disabled) |
+| `/threadmode` | Show status or toggle per-agent Telegram thread routing with `/threadmode on|off|status` (requires bot-level Threaded Mode in @BotFather) |
 | `/newagent` | Create a new agent with a 4-step wizard (model → repo → branch → prompt) |
 | `/pr` | Show the active agent PR status and action buttons |
 | `/ready` | Mark the active agent PR ready for review |
@@ -177,8 +177,8 @@ When `GITHUB_TOKEN` (or `GITHUB_PAT`) is set:
 Recommended GitHub token choices:
 
 - **Fine-grained PAT** scoped to the target repository, with at least:
-  - **Pull requests: Read and write**
-  - **Contents: Write** (needed for merging)
+  - **Pull requests: Read and write** for PR status reads and ready-for-review actions
+  - **Contents: Read and write** (needed for merging)
 - **Classic PAT** with `repo` scope also works.
 
 If no GitHub token is configured, the bot still shows the PR link, but PR state changes remain read-only.
@@ -201,12 +201,8 @@ If no GitHub token is configured, the bot still shows the PR link, but PR state 
 
 Use `/threadmode on` if you want one Telegram thread/topic per Cursor agent.
 
-`/threadmode on` is only allowed when all of these are true:
-
-- The chat is a Telegram supergroup.
-- Topics are enabled for that supergroup.
-- The chat-level setting **Disallow users to create new threads** is enabled.
-- The bot is an admin with the **Manage Topics** permission.
+`/threadmode on` is allowed when the bot itself has **Threaded Mode** enabled in
+[@BotFather](https://t.me/BotFather) (Telegram `getMe.has_topics_enabled = true`).
 
 - In threaded mode, `/agents` becomes the button-based thread opener for agents.
 - `/focus` remains the non-thread-mode active-agent picker.

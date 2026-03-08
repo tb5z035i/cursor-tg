@@ -678,43 +678,19 @@ async def _get_thread_mode_prerequisite_error(
         return "Thread mode can only be enabled from inside a Telegram chat."
 
     try:
-        chat_info = await context.bot.get_chat(chat.id)
-    except TelegramError as exc:
-        return f"Couldn't verify Telegram topic settings for this chat: {exc}"
-
-    if getattr(chat_info, "type", None) != "supergroup" or not bool(
-        getattr(chat_info, "is_forum", False)
-    ):
-        return (
-            "Thread mode can only be enabled in a Telegram supergroup with Topics turned on."
-        )
-
-    permissions = getattr(chat_info, "permissions", None)
-    if bool(getattr(permissions, "can_manage_topics", False)):
-        return (
-            'Thread mode requires the Telegram chat setting "Disallow users to create '
-            'new threads" to be enabled.'
-        )
-
-    try:
         bot_user = await context.bot.get_me()
-        bot_member = await context.bot.get_chat_member(chat.id, bot_user.id)
     except TelegramError as exc:
-        return f"Couldn't verify the bot's topic permissions for this chat: {exc}"
+        return f"Couldn't verify the bot's Threaded Mode setting: {exc}"
 
-    member_status = getattr(bot_member, "status", "")
-    if member_status not in {"administrator", "creator", "owner"}:
+    has_topics_enabled = getattr(bot_user, "has_topics_enabled", None)
+    if has_topics_enabled is None:
+        api_kwargs = getattr(bot_user, "api_kwargs", None)
+        if isinstance(api_kwargs, dict):
+            has_topics_enabled = api_kwargs.get("has_topics_enabled")
+    if not bool(has_topics_enabled):
         return (
-            "Thread mode requires the bot to be a chat admin with permission to manage "
-            "topics."
-        )
-
-    if member_status == "administrator" and not bool(
-        getattr(bot_member, "can_manage_topics", False)
-    ):
-        return (
-            "Thread mode requires the bot to have the Telegram Manage Topics "
-            "administrator permission."
+            "Thread mode requires Telegram Threaded Mode to be enabled for this bot in "
+            "@BotFather."
         )
 
     return None

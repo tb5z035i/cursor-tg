@@ -24,11 +24,7 @@ class FakeBot:
     def __init__(self) -> None:
         self.created_topics: list[tuple[int, str]] = []
         self.messages: list[tuple[int, int | None, str]] = []
-        self.chat_type = "supergroup"
-        self.is_forum = True
-        self.users_can_create_threads = False
-        self.bot_status = "administrator"
-        self.bot_can_manage_topics = True
+        self.has_topics_enabled = True
 
     async def create_forum_topic(self, chat_id: int, name: str):
         self.created_topics.append((chat_id, name))
@@ -48,26 +44,8 @@ class FakeBot:
     async def send_chat_action(self, **kwargs) -> None:
         return None
 
-    async def get_chat(self, chat_id: int):
-        return SimpleNamespace(
-            id=chat_id,
-            type=self.chat_type,
-            is_forum=self.is_forum,
-            permissions=SimpleNamespace(
-                can_manage_topics=self.users_can_create_threads,
-            ),
-        )
-
     async def get_me(self):
-        return SimpleNamespace(id=4321)
-
-    async def get_chat_member(self, chat_id: int, user_id: int):
-        assert chat_id == 999
-        assert user_id == 4321
-        return SimpleNamespace(
-            status=self.bot_status,
-            can_manage_topics=self.bot_can_manage_topics,
-        )
+        return SimpleNamespace(id=4321, has_topics_enabled=self.has_topics_enabled)
 
 
 class FakeCursorClient:

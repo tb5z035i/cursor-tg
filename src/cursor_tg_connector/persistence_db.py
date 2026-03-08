@@ -89,6 +89,18 @@ class Database:
             await db.execute(CREATE_MESSAGE_DELIVERY_TABLE)
             await db.execute(CREATE_NOTICE_STATE_TABLE)
             await db.execute(CREATE_DELIVERY_CURSOR_TABLE)
+            await _ensure_column(
+                db,
+                table_name="agent_delivery_cursor",
+                column_name="last_message_id",
+                definition="TEXT",
+            )
+            await _ensure_column(
+                db,
+                table_name="agent_delivery_cursor",
+                column_name="last_message_text_length",
+                definition="INTEGER NOT NULL DEFAULT 0",
+            )
             await db.execute(CREATE_AGENT_THREAD_BINDING_TABLE)
             await db.commit()
 
@@ -116,6 +128,18 @@ class Database:
             await db.execute(CREATE_MESSAGE_DELIVERY_TABLE)
             await db.execute(CREATE_NOTICE_STATE_TABLE)
             await db.execute(CREATE_DELIVERY_CURSOR_TABLE)
+            await _ensure_column(
+                db,
+                table_name="agent_delivery_cursor",
+                column_name="last_message_id",
+                definition="TEXT",
+            )
+            await _ensure_column(
+                db,
+                table_name="agent_delivery_cursor",
+                column_name="last_message_text_length",
+                definition="INTEGER NOT NULL DEFAULT 0",
+            )
             await db.execute(CREATE_AGENT_THREAD_BINDING_TABLE)
             for table_name in MANAGED_TABLES:
                 await db.execute(f"DELETE FROM {table_name}")

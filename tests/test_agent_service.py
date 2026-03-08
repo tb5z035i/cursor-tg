@@ -31,6 +31,13 @@ class FakeCursorClient:
             ),
         ]
         self.stopped_agent_ids: list[str] = []
+        self.conversations = {
+            "agent-1": [
+                {"id": "m1", "type": "assistant_message", "text": "hello"},
+                {"id": "m2", "type": "assistant_message", "text": "world"},
+            ],
+            "agent-2": [{"id": "m3", "type": "assistant_message", "text": "other"}],
+        }
 
     async def list_agents(self) -> list[Agent]:
         return self.agents
@@ -39,13 +46,7 @@ class FakeCursorClient:
         return next(agent for agent in self.agents if agent.id == agent_id)
 
     async def get_conversation(self, agent_id: str) -> AgentConversation:
-        if agent_id == "agent-1":
-            messages = [
-                {"id": "m1", "type": "assistant_message", "text": "hello"},
-                {"id": "m2", "type": "assistant_message", "text": "world"},
-            ]
-        else:
-            messages = [{"id": "m3", "type": "assistant_message", "text": "other"}]
+        messages = self.conversations[agent_id]
         return AgentConversation.model_validate({"id": agent_id, "messages": messages})
 
     async def stop_agent(self, agent_id: str) -> str:
@@ -125,3 +126,28 @@ async def test_stop_active_agent_requires_running_agent(state_repo) -> None:
     session = await state_repo.get_session(1234)
     assert session.active_agent_id == "agent-2"
     assert client.stopped_agent_ids == []
+
+
+@pytest.mark.asyncio
+async def test_get_unread_snapshot_includes_appended_text_for_last_message(state_repo) -> None:
+    client = FakeCursorClient()
+    service = AgentService(client, state_repo)
+
+    await state_repo.set_delivery_state(
+        "agent-1",
+        2,
+        last_message_id="m2",
+        last_message_text_length=2,
+    )
+
+    client.conversations["agent-1"] = [
+        {"id": "m1", "type": "assistant_message", "text": "hello"},
+        {"id": "m2", "type": "assistant_message", "text": "world and more"},
+    ]
+
+    snapshot = await service.get_unread_snapshot("agent-1")
+
+    assert snapshot.delivered_count == 2
+    assert len(snapshot.unread_messages) == 1
+    assert snapshot.unread_messages[0].id == "m2"
+    assert snapshot.unread_messages[0].text == "rld and more"

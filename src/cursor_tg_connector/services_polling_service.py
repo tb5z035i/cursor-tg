@@ -11,9 +11,10 @@ from cursor_tg_connector.persistence_state_repo import StateRepository
 from cursor_tg_connector.services_agent_service import (
     AgentConversationSnapshot,
     AgentService,
+    deliver_snapshot_messages,
 )
 from cursor_tg_connector.telegram_bot_constants import SWITCH_AGENT_PREFIX
-from cursor_tg_connector.utils_formatting import build_active_agent_message, build_agent_notice
+from cursor_tg_connector.utils_formatting import build_agent_notice
 
 logger = logging.getLogger(__name__)
 
@@ -97,14 +98,13 @@ class PollingService:
         notifier,
         chat_id: int,
     ) -> None:
-        cursor = snapshot.delivered_count
-        for message in snapshot.unread_messages[:10]:
-            await notifier.send_text(
-                chat_id,
-                build_active_agent_message(snapshot.agent, message.text),
-            )
-            cursor += 1
-            await self.state_repo.set_delivery_cursor(snapshot.agent.id, cursor)
+        await deliver_snapshot_messages(
+            snapshot=snapshot,
+            state_repo=self.state_repo,
+            notifier=notifier,
+            chat_id=chat_id,
+            limit=10,
+        )
 
         if not snapshot.unread_messages:
             await self.state_repo.clear_notice_state(snapshot.agent.id)
@@ -126,21 +126,20 @@ class PollingService:
             return
 
         if unread_mode == UnselectedAgentUnreadMode.FULL:
-            cursor = snapshot.delivered_count
             switch_keyboard = _build_switch_agent_keyboard(
                 snapshot.agent.id,
                 snapshot.agent.name or snapshot.agent.id,
                 threaded=threaded,
             )
-            for index, message in enumerate(snapshot.unread_messages[:10]):
-                await notifier.send_text(
-                    chat_id,
-                    build_active_agent_message(snapshot.agent, message.text),
-                    message_thread_id=None,
-                    reply_markup=switch_keyboard if index == 0 else None,
-                )
-                cursor += 1
-                await self.state_repo.set_delivery_cursor(snapshot.agent.id, cursor)
+            await deliver_snapshot_messages(
+                snapshot=snapshot,
+                state_repo=self.state_repo,
+                notifier=notifier,
+                chat_id=chat_id,
+                message_thread_id=None,
+                limit=10,
+                reply_markup_first=switch_keyboard,
+            )
             await self.state_repo.clear_notice_state(snapshot.agent.id)
             return
 
@@ -173,15 +172,14 @@ class PollingService:
     ) -> None:
         binding = await self.state_repo.get_agent_thread_binding(snapshot.agent.id)
         if binding is not None:
-            cursor = snapshot.delivered_count
-            for message in snapshot.unread_messages[:10]:
-                await notifier.send_text(
-                    binding.telegram_chat_id,
-                    build_active_agent_message(snapshot.agent, message.text),
-                    message_thread_id=binding.message_thread_id,
-                )
-                cursor += 1
-                await self.state_repo.set_delivery_cursor(snapshot.agent.id, cursor)
+            await deliver_snapshot_messages(
+                snapshot=snapshot,
+                state_repo=self.state_repo,
+                notifier=notifier,
+                chat_id=binding.telegram_chat_id,
+                message_thread_id=binding.message_thread_id,
+                limit=10,
+            )
             if not snapshot.unread_messages:
                 await self.state_repo.clear_notice_state(snapshot.agent.id)
             return

@@ -22,7 +22,10 @@ from cursor_tg_connector.telegram_bot_commands import (
     current_command,
     focus_command,
     help_command,
+    merge_command,
     new_agent_command,
+    pr_command,
+    ready_command,
     resetdb_command,
     start_command,
     stop_command,
@@ -58,6 +61,9 @@ def build_application(services: AppServices) -> Application:
     application.add_handler(CommandHandler("clear", clear_command))
     application.add_handler(CommandHandler("threadmode", threadmode_command))
     application.add_handler(CommandHandler("newagent", new_agent_command))
+    application.add_handler(CommandHandler("pr", pr_command))
+    application.add_handler(CommandHandler("ready", ready_command))
+    application.add_handler(CommandHandler("merge", merge_command))
     application.add_handler(CommandHandler("cancel", cancel_command))
     application.add_handler(CommandHandler("resetdb", resetdb_command))
     application.add_handler(CallbackQueryHandler(callback_router))

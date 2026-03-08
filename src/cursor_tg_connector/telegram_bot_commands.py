@@ -5,15 +5,20 @@ from telegram.error import TelegramError
 from telegram.ext import ContextTypes
 
 from cursor_tg_connector.cursor_api_client import CursorApiError
+from cursor_tg_connector.cursor_api_models import Agent
 from cursor_tg_connector.domain_types import UnselectedAgentUnreadMode
+from cursor_tg_connector.github_api_client import GitHubApiError
+from cursor_tg_connector.github_api_models import GitHubMergeMethod
 from cursor_tg_connector.services_agent_service import AgentStopError
 from cursor_tg_connector.services_create_agent_service import CreateAgentError
+from cursor_tg_connector.services_pull_request_service import PullRequestActionError
 from cursor_tg_connector.telegram_bot_common import (
     BOT_COMMANDS,
     get_message_thread_id,
     get_services,
     render_agent_keyboard,
     render_model_keyboard,
+    render_pull_request_keyboard,
     render_reset_db_keyboard,
 )
 from cursor_tg_connector.utils_formatting import (
@@ -43,6 +48,9 @@ _HELP_TEXT = (
     "• Send /stop to stop the currently selected running agent.\n"
     "• Send /threadmode on to route each agent into its own Telegram thread.\n"
     "• Send /newagent to create a new agent (model → repo → branch → prompt).\n"
+    "• Send /pr to inspect the current agent pull request and use action buttons.\n"
+    "• Send /ready to mark the current agent pull request ready for review.\n"
+    "• Send /merge [merge|squash|rebase] to merge the current agent pull request.\n"
     "• Send any text message to follow up with the active agent or from inside an agent thread.\n"
     "• In thread mode, root-chat notices can still appear for unbound agents based on "
     "/configure_unread.\n"
@@ -56,6 +64,13 @@ _STOP_HELP_TEXT = (
     "\n"
     "Use /focus to pick a running agent, then send /stop to stop it."
 )
+
+_PR_ACTIONS_DISABLED_TEXT = (
+    "PR actions are unavailable. Set GITHUB_TOKEN (or GITHUB_PAT) to enable ready-for-review "
+    "and merge actions."
+)
+
+_MERGE_USAGE_TEXT = "Usage: /merge [merge|squash|rebase]"
 
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -76,31 +91,11 @@ async def current_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     if not await _authorize_and_record_chat(update, context):
         return
 
-    services = get_services(context)
-    session = await services.create_agent_service.state_repo.get_session(
-        services.settings.telegram_allowed_user_id
-    )
-    if session.thread_mode_enabled:
-        agent_id = await services.agent_service.resolve_context_agent_id(
-            telegram_user_id=services.settings.telegram_allowed_user_id,
-            chat_id=update.effective_chat.id,
-            message_thread_id=get_message_thread_id(update),
-        )
-        if agent_id is None:
-            await update.effective_message.reply_text(build_thread_command_guidance())
-            return
-        agent = await services.agent_service.cursor_client.get_agent(agent_id)
-    else:
-        agent = await services.agent_service.ensure_active_agent_exists(
-            services.settings.telegram_allowed_user_id,
-        )
+    agent = await _resolve_context_agent(update, context)
     if agent is None:
-        await update.effective_message.reply_text(
-            "No active agent selected. Use /focus to pick one."
-        )
         return
 
-    await update.effective_message.reply_text(build_agent_info_message(agent))
+    await _reply_with_agent_overview(update, context, agent)
 
 
 async def clear_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -320,6 +315,82 @@ async def new_agent_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     )
 
 
+async def pr_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not await _authorize_and_record_chat(update, context):
+        return
+
+    agent = await _resolve_context_agent(update, context)
+    if agent is None:
+        return
+
+    if not agent.target.pr_url:
+        await update.effective_message.reply_text(
+            f"{agent.name or agent.id} does not have a pull request yet."
+        )
+        return
+
+    await _reply_with_agent_overview(update, context, agent, include_disabled_hint=True)
+
+
+async def ready_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not await _authorize_and_record_chat(update, context):
+        return
+
+    agent = await _resolve_context_agent(update, context)
+    if agent is None:
+        return
+
+    services = get_services(context)
+    pull_request_service = getattr(services, "pull_request_service", None)
+    if pull_request_service is None:
+        await update.effective_message.reply_text(_PR_ACTIONS_DISABLED_TEXT)
+        return
+
+    try:
+        pull_request = await pull_request_service.mark_ready_for_review(agent)
+    except (PullRequestActionError, GitHubApiError) as exc:
+        await update.effective_message.reply_text(str(exc))
+        return
+
+    await update.effective_message.reply_text(
+        f"Marked PR #{pull_request.number} ready for review.\n{pull_request.html_url}"
+    )
+
+
+async def merge_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not await _authorize_and_record_chat(update, context):
+        return
+
+    merge_method = _parse_merge_method(context.args[0]) if context.args else None
+    if context.args and merge_method is None:
+        await update.effective_message.reply_text(_MERGE_USAGE_TEXT)
+        return
+
+    agent = await _resolve_context_agent(update, context)
+    if agent is None:
+        return
+
+    services = get_services(context)
+    pull_request_service = getattr(services, "pull_request_service", None)
+    if pull_request_service is None:
+        await update.effective_message.reply_text(_PR_ACTIONS_DISABLED_TEXT)
+        return
+
+    try:
+        result = await pull_request_service.merge_pull_request(
+            agent,
+            merge_method=merge_method or services.settings.github_default_merge_method,
+        )
+    except (PullRequestActionError, GitHubApiError) as exc:
+        await update.effective_message.reply_text(str(exc))
+        return
+
+    await update.effective_message.reply_text(
+        f"Merged {agent.target.pr_url} using "
+        f"{merge_method or services.settings.github_default_merge_method}.\n{result.message}"
+    )
+
+
 async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not await _authorize_and_record_chat(update, context):
         return
@@ -386,6 +457,80 @@ async def resetdb_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         build_reset_db_prompt(),
         reply_markup=render_reset_db_keyboard(),
     )
+
+
+async def _reply_with_agent_overview(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    agent: Agent,
+    *,
+    include_disabled_hint: bool = False,
+) -> None:
+    message = update.effective_message
+    if message is None:
+        return
+
+    text, reply_markup = await _build_agent_overview(update, context, agent)
+    if include_disabled_hint and agent.target.pr_url and reply_markup is None:
+        services = get_services(context)
+        pull_request_service = getattr(services, "pull_request_service", None)
+        if pull_request_service is None or not pull_request_service.enabled:
+            text = f"{text}\n\n{_PR_ACTIONS_DISABLED_TEXT}"
+    await message.reply_text(text, reply_markup=reply_markup)
+
+
+async def _build_agent_overview(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    agent: Agent,
+) -> tuple[str, object | None]:
+    services = get_services(context)
+    pull_request_service = getattr(services, "pull_request_service", None)
+    if not agent.target.pr_url or pull_request_service is None or not pull_request_service.enabled:
+        return build_agent_info_message(agent), None
+
+    try:
+        pull_request = await pull_request_service.get_pull_request(agent)
+    except (PullRequestActionError, GitHubApiError) as exc:
+        return f"{build_agent_info_message(agent)}\n\nPR actions unavailable: {exc}", None
+
+    return (
+        build_agent_info_message(agent, pull_request),
+        render_pull_request_keyboard(
+            agent_id=agent.id,
+            pull_request=pull_request,
+            default_merge_method=services.settings.github_default_merge_method,
+        ),
+    )
+
+
+async def _resolve_context_agent(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+) -> Agent | None:
+    services = get_services(context)
+    session = await services.create_agent_service.state_repo.get_session(
+        services.settings.telegram_allowed_user_id
+    )
+    if session.thread_mode_enabled:
+        agent_id = await services.agent_service.resolve_context_agent_id(
+            telegram_user_id=services.settings.telegram_allowed_user_id,
+            chat_id=update.effective_chat.id,
+            message_thread_id=get_message_thread_id(update),
+        )
+        if agent_id is None:
+            await update.effective_message.reply_text(build_thread_command_guidance())
+            return None
+        return await services.agent_service.cursor_client.get_agent(agent_id)
+
+    agent = await services.agent_service.ensure_active_agent_exists(
+        services.settings.telegram_allowed_user_id,
+    )
+    if agent is None:
+        await update.effective_message.reply_text(
+            "No active agent selected. Use /focus to pick one."
+        )
+    return agent
 
 
 async def _authorize_and_record_chat(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
@@ -490,6 +635,13 @@ def _build_unread_command_text(
         "• count — send only unread-count notices (default).\n"
         "• none — send nothing until you switch to that agent."
     )
+
+
+def _parse_merge_method(value: str) -> GitHubMergeMethod | None:
+    normalized = value.strip().lower()
+    if normalized in {"merge", "squash", "rebase"}:
+        return normalized
+    return None
 
 
 async def _list_agent_selection_items(

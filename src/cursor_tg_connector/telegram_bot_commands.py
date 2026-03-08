@@ -16,6 +16,7 @@ from cursor_tg_connector.telegram_bot_common import (
     render_model_keyboard,
     render_reset_db_keyboard,
 )
+from cursor_tg_connector.telegram_threads import close_agent_thread
 from cursor_tg_connector.utils_formatting import (
     build_agent_info_message,
     build_agents_summary_message,
@@ -41,6 +42,7 @@ _HELP_TEXT = (
     "• Send /configure_unread full|count|none to control non-active agent notices.\n"
     "• Send /unfocus to clear the current active agent selection.\n"
     "• Send /stop to stop the currently selected running agent.\n"
+    "• Send /close from inside an agent thread to close and unbind that Telegram thread.\n"
     "• Send /threadmode on to route each agent into its own Telegram thread.\n"
     "• Send /newagent to create a new agent (model → repo → branch → prompt).\n"
     "• Send any text message to follow up with the active agent or from inside an agent thread.\n"
@@ -134,6 +136,42 @@ async def clear_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     await update.effective_message.reply_text(
         f"Cleared all unread messages for {agent_name}."
     )
+
+
+async def close_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not await _authorize_and_record_chat(update, context):
+        return
+
+    services = get_services(context)
+    state_repo = services.create_agent_service.state_repo
+    session = await state_repo.get_session(services.settings.telegram_allowed_user_id)
+    if not session.thread_mode_enabled:
+        await update.effective_message.reply_text(build_thread_command_guidance())
+        return
+
+    thread_id = get_message_thread_id(update)
+    if thread_id is None:
+        await update.effective_message.reply_text(build_thread_command_guidance())
+        return
+
+    binding = await state_repo.get_thread_binding(update.effective_chat.id, thread_id)
+    if binding is None:
+        await update.effective_message.reply_text(build_thread_command_guidance())
+        return
+
+    await update.effective_message.reply_text(
+        "Closing this Telegram thread. Use /agents in the root chat to create a new one later."
+    )
+    try:
+        await close_agent_thread(bot=context.bot, binding=binding)
+    except TelegramError as exc:
+        await update.effective_message.reply_text(
+            f"Couldn't close this Telegram thread: {exc}"
+        )
+        return
+
+    await state_repo.delete_agent_thread_binding(binding.agent_id)
+    await state_repo.clear_notice_state(binding.agent_id)
 
 
 async def configure_unread_command(

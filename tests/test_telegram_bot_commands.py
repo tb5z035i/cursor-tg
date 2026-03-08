@@ -3,12 +3,14 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
+from telegram.error import TelegramError
 
 from cursor_tg_connector.cursor_api_models import Agent, AgentConversation
 from cursor_tg_connector.domain_types import AgentListItem, AgentThreadBinding
 from cursor_tg_connector.services_agent_service import AgentService
 from cursor_tg_connector.telegram_bot_commands import (
     agents_command,
+    close_command,
     help_command,
     new_agent_command,
     resetdb_command,
@@ -90,12 +92,15 @@ class FakeThreadModeBot:
         users_can_create_threads: bool = False,
         bot_status: str = "administrator",
         bot_can_manage_topics: bool = True,
+        close_error: Exception | None = None,
     ) -> None:
         self.chat_type = chat_type
         self.is_forum = is_forum
         self.users_can_create_threads = users_can_create_threads
         self.bot_status = bot_status
         self.bot_can_manage_topics = bot_can_manage_topics
+        self.close_error = close_error
+        self.closed_topics: list[tuple[int, int]] = []
 
     async def get_chat(self, chat_id: int):
         assert chat_id == 999
@@ -118,6 +123,12 @@ class FakeThreadModeBot:
             status=self.bot_status,
             can_manage_topics=self.bot_can_manage_topics,
         )
+
+    async def close_forum_topic(self, chat_id: int, message_thread_id: int) -> bool:
+        self.closed_topics.append((chat_id, message_thread_id))
+        if self.close_error is not None:
+            raise self.close_error
+        return True
 
 
 def build_context(
@@ -426,6 +437,124 @@ async def test_stop_command_in_thread_mode_outside_thread_shows_guidance(
         "This command only works inside a bound agent thread while thread mode is enabled. "
         "Use /agents in the root chat to create or open the correct thread."
     ]
+
+
+@pytest.mark.asyncio
+async def test_close_command_closes_bound_thread_and_removes_binding(
+    settings,
+    state_repo,
+) -> None:
+    message = FakeMessage()
+    message.message_thread_id = 77
+    update = SimpleNamespace(
+        effective_user=SimpleNamespace(id=settings.telegram_allowed_user_id),
+        effective_message=message,
+        effective_chat=SimpleNamespace(id=999),
+    )
+    session = await state_repo.get_session(settings.telegram_allowed_user_id)
+    session.thread_mode_enabled = True
+    await state_repo.upsert_session(session)
+    await state_repo.upsert_agent_thread_binding(
+        AgentThreadBinding(
+            agent_id="agent-1",
+            telegram_chat_id=999,
+            message_thread_id=77,
+        )
+    )
+    await state_repo.update_notice_state("agent-1", unread_count=2, last_message_id=None)
+    agent_service = AgentService(FakeCursorClient(), state_repo)
+    bot = FakeThreadModeBot()
+
+    await close_command(
+        update,
+        build_context(
+            settings=settings,
+            state_repo=state_repo,
+            agent_service=agent_service,
+            bot=bot,
+        ),
+    )
+
+    assert [text for text, _ in message.replies] == [
+        "Closing this Telegram thread. Use /agents in the root chat to create a new one later."
+    ]
+    assert bot.closed_topics == [(999, 77)]
+    assert await state_repo.get_agent_thread_binding("agent-1") is None
+    notice_state = await state_repo.get_notice_state("agent-1")
+    assert notice_state.last_notified_unread_count == 0
+
+
+@pytest.mark.asyncio
+async def test_close_command_in_thread_mode_outside_thread_shows_guidance(
+    settings,
+    state_repo,
+) -> None:
+    message = FakeMessage()
+    update = SimpleNamespace(
+        effective_user=SimpleNamespace(id=settings.telegram_allowed_user_id),
+        effective_message=message,
+        effective_chat=SimpleNamespace(id=999),
+    )
+    session = await state_repo.get_session(settings.telegram_allowed_user_id)
+    session.thread_mode_enabled = True
+    await state_repo.upsert_session(session)
+    agent_service = AgentService(FakeCursorClient(), state_repo)
+
+    await close_command(
+        update,
+        build_context(settings=settings, state_repo=state_repo, agent_service=agent_service),
+    )
+
+    assert [text for text, _ in message.replies] == [
+        "This command only works inside a bound agent thread while thread mode is enabled. "
+        "Use /agents in the root chat to create or open the correct thread."
+    ]
+
+
+@pytest.mark.asyncio
+async def test_close_command_reports_telegram_failure_and_keeps_binding(
+    settings,
+    state_repo,
+) -> None:
+    message = FakeMessage()
+    message.message_thread_id = 77
+    update = SimpleNamespace(
+        effective_user=SimpleNamespace(id=settings.telegram_allowed_user_id),
+        effective_message=message,
+        effective_chat=SimpleNamespace(id=999),
+    )
+    session = await state_repo.get_session(settings.telegram_allowed_user_id)
+    session.thread_mode_enabled = True
+    await state_repo.upsert_session(session)
+    await state_repo.upsert_agent_thread_binding(
+        AgentThreadBinding(
+            agent_id="agent-1",
+            telegram_chat_id=999,
+            message_thread_id=77,
+        )
+    )
+    agent_service = AgentService(FakeCursorClient(), state_repo)
+    bot = FakeThreadModeBot(close_error=TelegramError("boom"))
+
+    await close_command(
+        update,
+        build_context(
+            settings=settings,
+            state_repo=state_repo,
+            agent_service=agent_service,
+            bot=bot,
+        ),
+    )
+
+    assert [text for text, _ in message.replies] == [
+        "Closing this Telegram thread. Use /agents in the root chat to create a new one later.",
+        "Couldn't close this Telegram thread: boom",
+    ]
+    assert await state_repo.get_agent_thread_binding("agent-1") == AgentThreadBinding(
+        agent_id="agent-1",
+        telegram_chat_id=999,
+        message_thread_id=77,
+    )
 
 
 @pytest.mark.asyncio

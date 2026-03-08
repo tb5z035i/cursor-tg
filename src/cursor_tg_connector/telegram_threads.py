@@ -30,3 +30,10 @@ async def ensure_agent_thread(
     )
     await state_repo.upsert_agent_thread_binding(binding)
     return binding, True
+
+
+async def close_agent_thread(*, bot: Bot, binding: AgentThreadBinding) -> None:
+    await bot.close_forum_topic(
+        chat_id=binding.telegram_chat_id,
+        message_thread_id=binding.message_thread_id,
+    )

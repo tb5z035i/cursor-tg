@@ -323,6 +323,17 @@ class StateRepository:
         finally:
             await db.close()
 
+    async def delete_agent_thread_binding(self, agent_id: str) -> None:
+        db = await self.database.connect()
+        try:
+            await db.execute(
+                "DELETE FROM agent_thread_binding WHERE agent_id = ?",
+                (agent_id,),
+            )
+            await db.commit()
+        finally:
+            await db.close()
+
 
 def _utcnow() -> str:
     return datetime.now(tz=UTC).isoformat()

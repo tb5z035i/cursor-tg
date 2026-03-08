@@ -25,6 +25,8 @@ from cursor_tg_connector.utils_formatting import (
     format_command_list,
 )
 
+_PROJECT_GITHUB_URL = "https://github.com/tb5z035i/cursor-tg"
+
 _HELP_TEXT = (
     "Cursor Telegram connector — manage Cursor Cloud agents from Telegram.\n"
     "\n"
@@ -43,7 +45,9 @@ _HELP_TEXT = (
     "• Send any text message to follow up with the active agent or from inside an agent thread.\n"
     "• In thread mode, root-chat notices can still appear for unbound agents based on "
     "/configure_unread.\n"
-    "• Use /resetdb if you want to wipe and reinitialize local bot state."
+    "• Use /resetdb if you want to wipe and reinitialize local bot state.\n"
+    "\n"
+    f"GitHub: {_PROJECT_GITHUB_URL}"
 )
 
 _STOP_HELP_TEXT = (

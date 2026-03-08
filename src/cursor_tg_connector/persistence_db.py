@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS telegram_session (
     telegram_chat_id INTEGER,
     active_agent_id TEXT,
     thread_mode_enabled INTEGER NOT NULL DEFAULT 0,
+    thread_mode_configured INTEGER NOT NULL DEFAULT 0,
     unselected_agent_unread_mode TEXT NOT NULL DEFAULT 'count',
     wizard_state TEXT NOT NULL DEFAULT 'idle',
     wizard_payload_json TEXT NOT NULL DEFAULT '{}',
@@ -83,6 +84,12 @@ class Database:
             await _ensure_column(
                 db,
                 table_name="telegram_session",
+                column_name="thread_mode_configured",
+                definition="INTEGER NOT NULL DEFAULT 0",
+            )
+            await _ensure_column(
+                db,
+                table_name="telegram_session",
                 column_name="unselected_agent_unread_mode",
                 definition="TEXT NOT NULL DEFAULT 'count'",
             )
@@ -117,6 +124,12 @@ class Database:
                 db,
                 table_name="telegram_session",
                 column_name="thread_mode_enabled",
+                definition="INTEGER NOT NULL DEFAULT 0",
+            )
+            await _ensure_column(
+                db,
+                table_name="telegram_session",
+                column_name="thread_mode_configured",
                 definition="INTEGER NOT NULL DEFAULT 0",
             )
             await _ensure_column(

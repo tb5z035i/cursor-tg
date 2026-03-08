@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram.error import TelegramError
 from telegram.ext import ContextTypes
 
 from cursor_tg_connector.config import Settings
@@ -65,6 +66,43 @@ class AppServices:
 
 def get_services(context: ContextTypes.DEFAULT_TYPE) -> AppServices:
     return context.application.bot_data["services"]
+
+
+async def get_bot_thread_mode_support(bot: object | None) -> tuple[bool | None, str | None]:
+    if bot is None or not hasattr(bot, "get_me"):
+        return None, None
+
+    try:
+        bot_user = await bot.get_me()
+    except TelegramError as exc:
+        return None, str(exc)
+
+    has_topics_enabled = getattr(bot_user, "has_topics_enabled", None)
+    if has_topics_enabled is None:
+        api_kwargs = getattr(bot_user, "api_kwargs", None)
+        if isinstance(api_kwargs, dict):
+            has_topics_enabled = api_kwargs.get("has_topics_enabled")
+    if has_topics_enabled is None:
+        return None, None
+    return bool(has_topics_enabled), None
+
+
+async def auto_enable_thread_mode_if_supported(
+    context: ContextTypes.DEFAULT_TYPE,
+    telegram_user_id: int,
+) -> None:
+    services = get_services(context)
+    session = await services.create_agent_service.state_repo.get_session(telegram_user_id)
+    if getattr(session, "thread_mode_configured", False) or session.thread_mode_enabled:
+        return
+
+    supported, _ = await get_bot_thread_mode_support(getattr(context, "bot", None))
+    if supported:
+        await services.create_agent_service.state_repo.set_thread_mode_enabled(
+            telegram_user_id,
+            True,
+            configured=False,
+        )
 
 
 async def ensure_authorized(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:

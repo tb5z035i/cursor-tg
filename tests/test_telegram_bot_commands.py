@@ -20,6 +20,7 @@ from cursor_tg_connector.telegram_bot_commands import (
     pr_command,
     ready_command,
     resetdb_command,
+    start_command,
     stop_command,
     threadmode_command,
 )
@@ -217,7 +218,7 @@ def build_context(
     return SimpleNamespace(
         application=application,
         args=args or [],
-        bot=bot or FakeThreadModeBot(),
+        bot=bot or SimpleNamespace(),
     )
 
 
@@ -241,6 +242,101 @@ async def test_help_command_includes_project_github_url(settings, state_repo) ->
 
     assert len(message.replies) == 1
     assert "GitHub: https://github.com/tb5z035i/cursor-tg" in message.replies[0][0]
+
+
+@pytest.mark.asyncio
+async def test_start_command_greets_and_auto_enables_thread_mode_when_supported(
+    settings,
+    state_repo,
+) -> None:
+    message = FakeMessage()
+    update = SimpleNamespace(
+        effective_user=SimpleNamespace(id=settings.telegram_allowed_user_id),
+        effective_message=message,
+        effective_chat=SimpleNamespace(id=999),
+    )
+
+    await start_command(
+        update,
+        build_context(
+            settings=settings,
+            state_repo=state_repo,
+            agent_service=FakeListAgentService([]),
+            bot=FakeThreadModeBot(has_topics_enabled=True),
+        ),
+    )
+
+    session = await state_repo.get_session(settings.telegram_allowed_user_id)
+    assert session.thread_mode_enabled is True
+    assert session.thread_mode_configured is False
+    assert len(message.replies) == 1
+    text, kwargs = message.replies[0]
+    assert kwargs == {}
+    assert text.startswith("Hi! I'm your Cursor Telegram connector.")
+    assert "thread mode was turned on automatically" in text
+    assert "Use /agents in the root chat to create or open each agent thread." in text
+
+
+@pytest.mark.asyncio
+async def test_start_command_explains_thread_mode_when_bot_support_is_disabled(
+    settings,
+    state_repo,
+) -> None:
+    message = FakeMessage()
+    update = SimpleNamespace(
+        effective_user=SimpleNamespace(id=settings.telegram_allowed_user_id),
+        effective_message=message,
+        effective_chat=SimpleNamespace(id=999),
+    )
+
+    await start_command(
+        update,
+        build_context(
+            settings=settings,
+            state_repo=state_repo,
+            agent_service=FakeListAgentService([]),
+            bot=FakeThreadModeBot(has_topics_enabled=False),
+        ),
+    )
+
+    session = await state_repo.get_session(settings.telegram_allowed_user_id)
+    assert session.thread_mode_enabled is False
+    text, _ = message.replies[0]
+    assert text.startswith("Hi! I'm your Cursor Telegram connector.")
+    assert "Telegram Threaded Mode is not enabled for this bot." in text
+    assert "Thread mode gives each Cursor agent its own Telegram topic/thread" in text
+
+
+@pytest.mark.asyncio
+async def test_help_command_does_not_override_manual_thread_mode_off(
+    settings,
+    state_repo,
+) -> None:
+    session = await state_repo.get_session(settings.telegram_allowed_user_id)
+    session.thread_mode_enabled = False
+    session.thread_mode_configured = True
+    await state_repo.upsert_session(session)
+
+    message = FakeMessage()
+    update = SimpleNamespace(
+        effective_user=SimpleNamespace(id=settings.telegram_allowed_user_id),
+        effective_message=message,
+        effective_chat=SimpleNamespace(id=999),
+    )
+
+    await help_command(
+        update,
+        build_context(
+            settings=settings,
+            state_repo=state_repo,
+            agent_service=FakeListAgentService([]),
+            bot=FakeThreadModeBot(has_topics_enabled=True),
+        ),
+    )
+
+    updated = await state_repo.get_session(settings.telegram_allowed_user_id)
+    assert updated.thread_mode_enabled is False
+    assert updated.thread_mode_configured is True
 
 
 @pytest.mark.asyncio
@@ -420,6 +516,10 @@ async def test_threadmode_command_toggles_session_flag(settings, state_repo) -> 
         effective_chat=SimpleNamespace(id=999),
     )
     agent_service = AgentService(FakeCursorClient(), state_repo)
+    session = await state_repo.get_session(settings.telegram_allowed_user_id)
+    session.thread_mode_enabled = False
+    session.thread_mode_configured = True
+    await state_repo.upsert_session(session)
 
     await threadmode_command(
         update,
@@ -428,11 +528,13 @@ async def test_threadmode_command_toggles_session_flag(settings, state_repo) -> 
             state_repo=state_repo,
             agent_service=agent_service,
             args=["on"],
+            bot=FakeThreadModeBot(has_topics_enabled=True),
         ),
     )
 
-    session = await state_repo.get_session(settings.telegram_allowed_user_id)
-    assert session.thread_mode_enabled is True
+    updated = await state_repo.get_session(settings.telegram_allowed_user_id)
+    assert updated.thread_mode_enabled is True
+    assert updated.thread_mode_configured is True
     text, kwargs = message.replies[-1]
     assert "Thread mode is now enabled." in text
     assert "Thread mode is enabled." in text
@@ -457,15 +559,16 @@ async def test_threadmode_command_shows_clickable_options_by_default(
             settings=settings,
             state_repo=state_repo,
             agent_service=AgentService(FakeCursorClient(), state_repo),
+            bot=FakeThreadModeBot(has_topics_enabled=True),
         ),
     )
 
     text, kwargs = message.replies[-1]
-    assert "Thread mode is disabled." in text
+    assert "Thread mode is enabled." in text
     assert "Choose the routing mode below." in text
     markup = kwargs["reply_markup"]
     assert markup is not None
-    assert [button.text for button in markup.inline_keyboard[0]] == ["On", "✓ Off"]
+    assert [button.text for button in markup.inline_keyboard[0]] == ["✓ On", "Off"]
 
 
 @pytest.mark.asyncio

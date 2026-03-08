@@ -11,7 +11,11 @@ from cursor_tg_connector.domain_types import WizardStep
 from cursor_tg_connector.services_create_agent_service import CreateAgentError
 from cursor_tg_connector.services_followup_service import FollowupError
 from cursor_tg_connector.services_notification import TelegramNotifier
-from cursor_tg_connector.telegram_bot_common import get_message_thread_id, get_services
+from cursor_tg_connector.telegram_bot_common import (
+    auto_enable_thread_mode_if_supported,
+    get_message_thread_id,
+    get_services,
+)
 from cursor_tg_connector.telegram_threads import ensure_agent_thread
 from cursor_tg_connector.utils_formatting import (
     build_agent_created_message,
@@ -54,6 +58,10 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     await services.create_agent_service.state_repo.update_chat_context(
         services.settings.telegram_allowed_user_id,
         update.effective_chat.id,
+    )
+    await auto_enable_thread_mode_if_supported(
+        context,
+        services.settings.telegram_allowed_user_id,
     )
     session = await services.create_agent_service.get_session(
         services.settings.telegram_allowed_user_id

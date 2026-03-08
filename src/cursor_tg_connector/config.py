@@ -30,7 +30,7 @@ class Settings(BaseSettings):
         alias="GITHUB_API_BASE_URL",
     )
     github_default_merge_method: str = Field(
-        default="squash",
+        default="merge",
         alias="GITHUB_DEFAULT_MERGE_METHOD",
     )
     cursor_api_max_retries: int = Field(default=3, alias="CURSOR_API_MAX_RETRIES")

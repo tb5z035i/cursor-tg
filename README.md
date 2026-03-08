@@ -10,7 +10,7 @@ A single-process Python service that bridges a Telegram bot with the [Cursor Clo
 | **Telegram Bot Token** | Create a bot via [@BotFather](https://t.me/BotFather) on Telegram (see [step-by-step below](#1-create-a-telegram-bot)) |
 | **Your Telegram User ID** | Send `/start` to [@userinfobot](https://t.me/userinfobot) — the numeric ID it returns is your user ID |
 | **Cursor API Key** | Generate one at [Cursor Dashboard → Integrations](https://cursor.com/dashboard/integrations) |
-| **GitHub token** *(optional)* | Needed only if you want Telegram to mark PRs ready for review or merge them |
+| **GitHub token** *(optional)* | Create one in GitHub Settings if you want Telegram to mark PRs ready for review or merge them |
 
 ## Setup guide
 
@@ -30,7 +30,27 @@ Send `/start` to [@userinfobot](https://t.me/userinfobot). It replies with your 
 2. Create a new Cloud Agent API key.
 3. Copy the key — it is your `CURSOR_API_KEY`.
 
-### 4. Configure the service
+### 4. Create an optional GitHub token for PR actions
+
+You only need this if you want the bot to mark PRs ready for review or merge them from Telegram.
+
+**Fine-grained PAT (recommended):**
+
+1. Open GitHub → **Settings** → **Developer settings** → **Personal access tokens** → **Fine-grained tokens**.
+2. Click **Generate new token**.
+3. Restrict it to the repository (or org repositories) the Cursor agent works on.
+4. Grant at least:
+   - **Pull requests: Read and write**
+   - **Contents: Write**
+5. Copy the token — use it as `GITHUB_TOKEN` (or `GITHUB_PAT`).
+
+**Classic PAT (alternative):**
+
+1. Open GitHub → **Settings** → **Developer settings** → **Personal access tokens** → **Tokens (classic)**.
+2. Generate a token with the `repo` scope.
+3. Copy it into `GITHUB_TOKEN`.
+
+### 5. Configure the service
 
 ```bash
 cp .env.example .env
@@ -48,7 +68,7 @@ Optional PR action settings:
 
 ```
 GITHUB_TOKEN=github_pat_...
-GITHUB_DEFAULT_MERGE_METHOD=squash
+GITHUB_DEFAULT_MERGE_METHOD=merge
 ```
 
 All other settings have sensible defaults. See [Configuration reference](#configuration-reference) for details.
@@ -65,7 +85,7 @@ ENV_FILE=/path/to/secrets.env python -m cursor_tg_connector
 
 Environment variables always take precedence over values in the env file.
 
-### 5. Run
+### 6. Run
 
 **Local:**
 
@@ -188,7 +208,7 @@ agent/thread bindings. It does not stop or delete Cursor agents in Cursor Cloud.
 | `CURSOR_API_KEY` | *required* | Cursor Cloud API key |
 | `GITHUB_TOKEN` / `GITHUB_PAT` | optional | GitHub token used for PR actions (`/pr`, `/ready`, `/merge`) |
 | `GITHUB_API_BASE_URL` | `https://api.github.com` | GitHub API base URL |
-| `GITHUB_DEFAULT_MERGE_METHOD` | `squash` | Merge method used by the inline merge button (`merge`, `squash`, or `rebase`) |
+| `GITHUB_DEFAULT_MERGE_METHOD` | `merge` | Merge method used by the inline merge button (`merge`, `squash`, or `rebase`) |
 | `TELEGRAM_CHAT_ID` | auto-detected | Override the chat ID; normally discovered from your first message to the bot |
 | `CURSOR_API_BASE_URL` | `https://api.cursor.com` | Cursor API base URL |
 | `CURSOR_API_MAX_RETRIES` | `3` | Max retries on transient API errors (429, 5xx) |

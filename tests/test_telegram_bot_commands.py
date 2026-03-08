@@ -497,7 +497,8 @@ async def test_history_command_replays_recent_messages_and_marks_history_deliver
 
     assert message.replies == []
     assert len(bot.messages) == 3
-    assert "You" in str(bot.messages[0]["text"])
+    assert "<i>You</i>" in str(bot.messages[0]["text"])
+    assert "_You_" not in str(bot.messages[0]["text"])
     assert "<code>bug</code>" in str(bot.messages[0]["text"])
     assert "Agent One" in str(bot.messages[1]["text"])
     assert "<b>two</b>" in str(bot.messages[1]["text"])

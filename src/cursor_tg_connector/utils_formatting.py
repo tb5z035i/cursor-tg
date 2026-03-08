@@ -6,6 +6,7 @@ from collections.abc import Iterable
 
 from cursor_tg_connector.cursor_api_models import Agent, Repository
 from cursor_tg_connector.domain_types import AgentListItem
+from cursor_tg_connector.github_api_models import GitHubPullRequest
 
 TELEGRAM_MESSAGE_LIMIT = 4000
 
@@ -105,7 +106,10 @@ def build_agent_thread_name(agent: Agent) -> str:
     return title[:128]
 
 
-def build_agent_info_message(agent: Agent) -> str:
+def build_agent_info_message(
+    agent: Agent,
+    pull_request: GitHubPullRequest | None = None,
+) -> str:
     repo_name = shorten_repository_name(agent.source.repository)
     target_branch = agent.target.branch_name or "—"
     pr_url = agent.target.pr_url or "—"
@@ -118,6 +122,15 @@ def build_agent_info_message(agent: Agent) -> str:
         f"PR: {pr_url}",
         f"URL: {agent.target.url}",
     ]
+    if pull_request is not None:
+        lines.extend(
+            [
+                f"PR status: {describe_pull_request_state(pull_request)}",
+                f"PR title: {pull_request.title}",
+            ]
+        )
+        if pull_request.mergeable_state:
+            lines.append(f"PR mergeability: {pull_request.mergeable_state}")
     if agent.summary:
         lines.append(f"\n{agent.summary}")
     return "\n".join(lines)
@@ -182,6 +195,16 @@ def build_reset_db_success() -> str:
 
 def build_reset_db_cancelled() -> str:
     return "DB reset cancelled. No changes were made."
+
+
+def describe_pull_request_state(pull_request: GitHubPullRequest) -> str:
+    if pull_request.merged:
+        return "merged"
+    if pull_request.state.lower() != "open":
+        return pull_request.state.lower()
+    if pull_request.draft:
+        return "draft"
+    return "ready for review"
 
 
 def build_repository_label(repository: Repository) -> str:

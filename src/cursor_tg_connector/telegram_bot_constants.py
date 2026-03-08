@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 SWITCH_AGENT_PREFIX = "agent:switch:"
+PR_SHOW_PREFIX = "pr:show:"
+PR_READY_PREFIX = "pr:ready:"
+PR_MERGE_PREFIX = "pr:merge:"
 MODEL_SELECT_PREFIX = "wizard:model:"
 MODEL_PAGE_PREFIX = "wizard:model_page:"
 REPO_SELECT_PREFIX = "wizard:repo:"

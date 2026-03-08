@@ -3,12 +3,15 @@ from __future__ import annotations
 from telegram import Update
 from telegram.ext import ContextTypes
 
+from cursor_tg_connector.github_api_client import GitHubApiError
 from cursor_tg_connector.services_create_agent_service import CreateAgentError
 from cursor_tg_connector.services_notification import TelegramNotifier
+from cursor_tg_connector.services_pull_request_service import PullRequestActionError
 from cursor_tg_connector.telegram_bot_common import (
     get_services,
     render_branch_keyboard,
     render_model_keyboard,
+    render_pull_request_keyboard,
     render_repository_keyboard,
 )
 from cursor_tg_connector.telegram_bot_constants import (
@@ -16,6 +19,9 @@ from cursor_tg_connector.telegram_bot_constants import (
     BRANCH_SELECT_PREFIX,
     MODEL_PAGE_PREFIX,
     MODEL_SELECT_PREFIX,
+    PR_MERGE_PREFIX,
+    PR_READY_PREFIX,
+    PR_SHOW_PREFIX,
     REPO_PAGE_PREFIX,
     REPO_SELECT_PREFIX,
     RESET_DB_CANCEL_PREFIX,
@@ -24,6 +30,7 @@ from cursor_tg_connector.telegram_bot_constants import (
 )
 from cursor_tg_connector.telegram_threads import ensure_agent_thread
 from cursor_tg_connector.utils_formatting import (
+    build_agent_info_message,
     build_reset_db_cancelled,
     build_reset_db_success,
     build_thread_opened_message,
@@ -51,6 +58,15 @@ async def callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
     if data.startswith(SWITCH_AGENT_PREFIX):
         await _switch_agent(update, context, data[len(SWITCH_AGENT_PREFIX) :])
+        return
+    if data.startswith(PR_SHOW_PREFIX):
+        await _show_pull_request(update, context, data[len(PR_SHOW_PREFIX) :])
+        return
+    if data.startswith(PR_READY_PREFIX):
+        await _mark_pull_request_ready(update, context, data[len(PR_READY_PREFIX) :])
+        return
+    if data.startswith(PR_MERGE_PREFIX):
+        await _merge_pull_request(update, context, data[len(PR_MERGE_PREFIX) :])
         return
     if data == RESET_DB_CONFIRM_PREFIX:
         await _confirm_reset_db(update, context)
@@ -285,3 +301,96 @@ async def _select_branch(
 
     await query.answer("Branch selected")
     await query.edit_message_text("Step 4/4: Send the prompt text for the new agent.")
+
+
+async def _show_pull_request(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    agent_id: str,
+) -> None:
+    query = update.callback_query
+    services = get_services(context)
+    pull_request_service = getattr(services, "pull_request_service", None)
+    if pull_request_service is None or not pull_request_service.enabled:
+        await query.answer(
+            "Set GITHUB_TOKEN to enable PR actions.",
+            show_alert=True,
+        )
+        return
+
+    try:
+        agent = await services.agent_service.cursor_client.get_agent(agent_id)
+        pull_request = await pull_request_service.get_pull_request(agent)
+    except (PullRequestActionError, GitHubApiError) as exc:
+        await query.answer(str(exc), show_alert=True)
+        return
+
+    await query.answer("PR refreshed")
+    await query.edit_message_text(
+        build_agent_info_message(agent, pull_request),
+        reply_markup=render_pull_request_keyboard(
+            agent_id=agent.id,
+            pull_request=pull_request,
+            default_merge_method=services.settings.github_default_merge_method,
+        ),
+    )
+
+
+async def _mark_pull_request_ready(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    agent_id: str,
+) -> None:
+    query = update.callback_query
+    services = get_services(context)
+    pull_request_service = getattr(services, "pull_request_service", None)
+    if pull_request_service is None:
+        await query.answer("PR actions are unavailable.", show_alert=True)
+        return
+
+    try:
+        agent = await services.agent_service.cursor_client.get_agent(agent_id)
+        pull_request = await pull_request_service.mark_ready_for_review(agent)
+    except (PullRequestActionError, GitHubApiError) as exc:
+        await query.answer(str(exc), show_alert=True)
+        return
+
+    await query.answer("Marked ready for review")
+    await query.edit_message_text(
+        build_agent_info_message(agent, pull_request),
+        reply_markup=render_pull_request_keyboard(
+            agent_id=agent.id,
+            pull_request=pull_request,
+            default_merge_method=services.settings.github_default_merge_method,
+        ),
+    )
+
+
+async def _merge_pull_request(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    payload: str,
+) -> None:
+    query = update.callback_query
+    services = get_services(context)
+    pull_request_service = getattr(services, "pull_request_service", None)
+    if pull_request_service is None:
+        await query.answer("PR actions are unavailable.", show_alert=True)
+        return
+
+    try:
+        merge_method, agent_id = payload.split(":", 1)
+    except ValueError:
+        await query.answer("Invalid merge action.", show_alert=True)
+        return
+
+    try:
+        agent = await services.agent_service.cursor_client.get_agent(agent_id)
+        await pull_request_service.merge_pull_request(agent, merge_method=merge_method)
+        pull_request = await pull_request_service.get_pull_request(agent)
+    except (PullRequestActionError, GitHubApiError) as exc:
+        await query.answer(str(exc), show_alert=True)
+        return
+
+    await query.answer("Pull request merged")
+    await query.edit_message_text(build_agent_info_message(agent, pull_request))

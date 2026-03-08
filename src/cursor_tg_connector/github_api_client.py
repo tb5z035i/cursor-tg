@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import logging
-from urllib.parse import urlparse
+from typing import Any
+from urllib.parse import urlparse, urlunparse
 
 import httpx
 
@@ -13,6 +14,14 @@ from cursor_tg_connector.github_api_models import (
 )
 
 logger = logging.getLogger(__name__)
+
+_MARK_READY_FOR_REVIEW_MUTATION = """
+mutation MarkPullRequestReadyForReview($pullRequestId: ID!) {
+  markPullRequestReadyForReview(input: {pullRequestId: $pullRequestId}) {
+    clientMutationId
+  }
+}
+""".strip()
 
 
 class GitHubApiError(RuntimeError):
@@ -29,6 +38,7 @@ class GitHubApiClient:
         http_client: httpx.AsyncClient | None = None,
     ) -> None:
         self._owns_client = http_client is None
+        self._graphql_url = build_github_graphql_url(base_url)
         self._client = http_client or httpx.AsyncClient(
             base_url=base_url,
             headers={
@@ -48,13 +58,26 @@ class GitHubApiClient:
         payload = await self._request("GET", f"/repos/{owner}/{repo}/pulls/{pull_number}")
         return GitHubPullRequest.model_validate(payload)
 
-    async def mark_ready_for_review(self, pr_url: str) -> GitHubPullRequest:
-        owner, repo, pull_number = parse_github_pr_url(pr_url)
-        payload = await self._request(
-            "POST",
-            f"/repos/{owner}/{repo}/pulls/{pull_number}/ready_for_review",
+    async def mark_ready_for_review(
+        self,
+        pr_url: str,
+        *,
+        pull_request_id: str | None = None,
+    ) -> GitHubPullRequest:
+        if not pull_request_id:
+            pull_request = await self.get_pull_request(pr_url)
+            pull_request_id = pull_request.node_id
+        if not pull_request_id:
+            raise GitHubApiError(
+                "GitHub pull request response did not include the node_id required to "
+                "mark it ready for review."
+            )
+
+        await self._graphql_request(
+            query=_MARK_READY_FOR_REVIEW_MUTATION,
+            variables={"pullRequestId": pull_request_id},
         )
-        return GitHubPullRequest.model_validate(payload)
+        return await self.get_pull_request(pr_url)
 
     async def merge_pull_request(
         self,
@@ -83,6 +106,31 @@ class GitHubApiClient:
             return response.json()
         raise GitHubApiError(self._build_error_message(response))
 
+    async def _graphql_request(
+        self,
+        *,
+        query: str,
+        variables: dict[str, object] | None = None,
+    ) -> dict[str, Any]:
+        response = await self._client.post(
+            self._graphql_url,
+            json={"query": query, "variables": variables or {}},
+        )
+        if response.status_code != 200:
+            raise GitHubApiError(self._build_error_message(response))
+
+        payload = response.json()
+        errors = payload.get("errors")
+        if errors:
+            raise GitHubApiError(
+                self._format_error_message(
+                    status_code=response.status_code,
+                    url=str(response.request.url),
+                    message=_extract_graphql_error_message(errors),
+                )
+            )
+        return payload.get("data", {})
+
     def _build_error_message(self, response: httpx.Response) -> str:
         try:
             payload = GitHubErrorEnvelope.model_validate(response.json())
@@ -90,23 +138,30 @@ class GitHubApiClient:
         except Exception:  # pragma: no cover - defensive fallback
             message = response.text
 
+        return self._format_error_message(
+            status_code=response.status_code,
+            url=str(response.request.url),
+            message=message,
+        )
+
+    def _format_error_message(self, *, status_code: int, url: str, message: str) -> str:
         normalized = message.strip()
-        if response.status_code == 401:
+        if status_code == 401:
             normalized = "Unauthorized - invalid or missing GitHub token"
-        elif response.status_code == 403 and "rate limit" in normalized.lower():
+        elif status_code == 403 and "rate limit" in normalized.lower():
             normalized = "GitHub API rate limit exceeded"
-        elif response.status_code == 404:
+        elif status_code == 404:
             normalized = (
                 "Pull request not found, or the GitHub token does not have access to the repository"
             )
 
         logger.warning(
             "GitHub API error status=%s url=%s message=%s",
-            response.status_code,
-            response.request.url,
+            status_code,
+            url,
             normalized,
         )
-        return f"GitHub API request failed ({response.status_code}): {normalized}"
+        return f"GitHub API request failed ({status_code}): {normalized}"
 
 
 def parse_github_pr_url(pr_url: str) -> tuple[str, str, int]:
@@ -123,3 +178,29 @@ def parse_github_pr_url(pr_url: str) -> tuple[str, str, int]:
         return owner, repo, int(raw_number)
     except ValueError as exc:
         raise GitHubApiError(f"Unsupported pull request URL: {pr_url}") from exc
+
+
+def build_github_graphql_url(base_url: str) -> str:
+    parsed = urlparse(base_url)
+    base_path = parsed.path.rstrip("/")
+    if base_path.endswith("/api/v3"):
+        graphql_path = f"{base_path[:-3]}/graphql"
+    elif base_path:
+        graphql_path = f"{base_path}/graphql"
+    else:
+        graphql_path = "/graphql"
+    return urlunparse(parsed._replace(path=graphql_path, params="", query="", fragment=""))
+
+
+def _extract_graphql_error_message(errors: object) -> str:
+    if not isinstance(errors, list):
+        return "GitHub GraphQL request failed"
+
+    messages = [
+        str(item.get("message", "")).strip()
+        for item in errors
+        if isinstance(item, dict) and item.get("message")
+    ]
+    if messages:
+        return "; ".join(messages)
+    return "GitHub GraphQL request failed"

@@ -151,10 +151,18 @@ async def test_configure_unread_command_reports_current_default_mode(
 
     assert message.replies == [
         "Current setting: unread count notices.\n\n"
-        "Usage: /configure_unread <full|count|none>\n"
+        "Choose how unread messages from unselected agents are delivered.\n"
         "• full — deliver unread messages from unselected agents in full.\n"
         "• count — send only unread-count notices (default).\n"
         "• none — send nothing until you switch to that agent."
+    ]
+    markup = message.reply_markups[0]
+    assert markup is not None
+    assert [button.text for button in markup.inline_keyboard[0]] == ["Full", "✓ Count", "None"]
+    assert [button.callback_data for button in markup.inline_keyboard[0]] == [
+        "settings:unread:full",
+        "settings:unread:count",
+        "settings:unread:none",
     ]
 
 
@@ -175,8 +183,16 @@ async def test_configure_unread_command_updates_mode(settings, state_repo) -> No
     session = await state_repo.get_session(settings.telegram_allowed_user_id)
     assert session.unselected_agent_unread_mode == UnselectedAgentUnreadMode.FULL
     assert message.replies == [
-        "Unread handling for unselected agents is now set to full text delivery."
+        "Unread handling for unselected agents is now set to full text delivery.\n\n"
+        "Current setting: full text delivery.\n\n"
+        "Choose how unread messages from unselected agents are delivered.\n"
+        "• full — deliver unread messages from unselected agents in full.\n"
+        "• count — send only unread-count notices (default).\n"
+        "• none — send nothing until you switch to that agent."
     ]
+    markup = message.reply_markups[0]
+    assert markup is not None
+    assert [button.text for button in markup.inline_keyboard[0]] == ["✓ Full", "Count", "None"]
 
 
 @pytest.mark.asyncio

@@ -388,7 +388,39 @@ async def test_threadmode_command_toggles_session_flag(settings, state_repo) -> 
 
     session = await state_repo.get_session(settings.telegram_allowed_user_id)
     assert session.thread_mode_enabled is True
-    assert "Thread mode is enabled." in message.replies[-1][0]
+    text, kwargs = message.replies[-1]
+    assert "Thread mode is now enabled." in text
+    assert "Thread mode is enabled." in text
+    assert kwargs["reply_markup"] is not None
+
+
+@pytest.mark.asyncio
+async def test_threadmode_command_shows_clickable_options_by_default(
+    settings,
+    state_repo,
+) -> None:
+    message = FakeMessage()
+    update = SimpleNamespace(
+        effective_user=SimpleNamespace(id=settings.telegram_allowed_user_id),
+        effective_message=message,
+        effective_chat=SimpleNamespace(id=999),
+    )
+
+    await threadmode_command(
+        update,
+        build_context(
+            settings=settings,
+            state_repo=state_repo,
+            agent_service=AgentService(FakeCursorClient(), state_repo),
+        ),
+    )
+
+    text, kwargs = message.replies[-1]
+    assert "Thread mode is disabled." in text
+    assert "Choose the routing mode below." in text
+    markup = kwargs["reply_markup"]
+    assert markup is not None
+    assert [button.text for button in markup.inline_keyboard[0]] == ["On", "✓ Off"]
 
 
 @pytest.mark.asyncio
@@ -518,9 +550,9 @@ async def test_threadmode_command_rejects_chat_without_topics(settings, state_re
 
     session = await state_repo.get_session(settings.telegram_allowed_user_id)
     assert session.thread_mode_enabled is False
-    assert message.replies[-1][0] == (
-        "Thread mode can only be enabled in a Telegram supergroup with Topics turned on."
-    )
+    text, kwargs = message.replies[-1]
+    assert "Thread mode can only be enabled in a Telegram supergroup with Topics turned on." in text
+    assert kwargs["reply_markup"] is not None
 
 
 @pytest.mark.asyncio
@@ -549,10 +581,13 @@ async def test_threadmode_command_rejects_when_users_can_create_threads(
 
     session = await state_repo.get_session(settings.telegram_allowed_user_id)
     assert session.thread_mode_enabled is False
-    assert message.replies[-1][0] == (
+    text, kwargs = message.replies[-1]
+    assert (
         'Thread mode requires the Telegram chat setting "Disallow users to create new '
         'threads" to be enabled.'
+        in text
     )
+    assert kwargs["reply_markup"] is not None
 
 
 @pytest.mark.asyncio
@@ -581,10 +616,13 @@ async def test_threadmode_command_rejects_when_bot_cannot_manage_topics(
 
     session = await state_repo.get_session(settings.telegram_allowed_user_id)
     assert session.thread_mode_enabled is False
-    assert message.replies[-1][0] == (
+    text, kwargs = message.replies[-1]
+    assert (
         "Thread mode requires the bot to have the Telegram Manage Topics "
         "administrator permission."
+        in text
     )
+    assert kwargs["reply_markup"] is not None
 
 
 @pytest.mark.asyncio
@@ -846,7 +884,43 @@ async def test_current_command_adds_pr_status_and_buttons_when_github_enabled(
 
     text, kwargs = message.replies[0]
     assert "PR status: draft" in text
+    assert kwargs["parse_mode"] == "HTML"
     assert kwargs["reply_markup"] is not None
+
+
+@pytest.mark.asyncio
+async def test_pr_command_escapes_pr_title_when_rendering_html(settings, state_repo) -> None:
+    message = FakeMessage()
+    update = SimpleNamespace(
+        effective_user=SimpleNamespace(id=settings.telegram_allowed_user_id),
+        effective_message=message,
+        effective_chat=SimpleNamespace(id=999),
+    )
+    client = FakeCursorClient()
+    agent_service = AgentService(client, state_repo)
+    pull_request_service = FakePullRequestService()
+    pull_request_service.pull_request = pull_request_service._build_pull_request(
+        state="open",
+        draft=True,
+        merged=False,
+    ).model_copy(
+        update={"title": "Fix <b>bold</b> & [link](https://example.com)"}
+    )
+    await state_repo.set_active_agent(settings.telegram_allowed_user_id, "agent-1")
+
+    await pr_command(
+        update,
+        build_context(
+            settings=settings,
+            state_repo=state_repo,
+            agent_service=agent_service,
+            pull_request_service=pull_request_service,
+        ),
+    )
+
+    text, kwargs = message.replies[0]
+    assert kwargs["parse_mode"] == "HTML"
+    assert "PR title: Fix &lt;b&gt;bold&lt;/b&gt; &amp; [link](https://example.com)" in text
 
 
 @pytest.mark.asyncio

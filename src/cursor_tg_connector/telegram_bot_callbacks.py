@@ -3,16 +3,24 @@ from __future__ import annotations
 from telegram import Update
 from telegram.ext import ContextTypes
 
+from cursor_tg_connector.domain_types import UnselectedAgentUnreadMode
 from cursor_tg_connector.github_api_client import GitHubApiError
 from cursor_tg_connector.services_create_agent_service import CreateAgentError
 from cursor_tg_connector.services_notification import TelegramNotifier
 from cursor_tg_connector.services_pull_request_service import PullRequestActionError
+from cursor_tg_connector.telegram_bot_commands import (
+    _build_thread_mode_command_text,
+    _build_unread_command_text,
+    _set_thread_mode_enabled,
+)
 from cursor_tg_connector.telegram_bot_common import (
     get_services,
     render_branch_keyboard,
     render_model_keyboard,
     render_pull_request_keyboard,
     render_repository_keyboard,
+    render_thread_mode_keyboard,
+    render_unread_mode_keyboard,
 )
 from cursor_tg_connector.telegram_bot_constants import (
     BRANCH_PAGE_PREFIX,
@@ -27,6 +35,8 @@ from cursor_tg_connector.telegram_bot_constants import (
     RESET_DB_CANCEL_PREFIX,
     RESET_DB_CONFIRM_PREFIX,
     SWITCH_AGENT_PREFIX,
+    THREAD_MODE_PREFIX,
+    UNREAD_MODE_PREFIX,
 )
 from cursor_tg_connector.telegram_threads import ensure_agent_thread
 from cursor_tg_connector.utils_formatting import (
@@ -58,6 +68,12 @@ async def callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
     if data.startswith(SWITCH_AGENT_PREFIX):
         await _switch_agent(update, context, data[len(SWITCH_AGENT_PREFIX) :])
+        return
+    if data.startswith(UNREAD_MODE_PREFIX):
+        await _set_unread_mode(update, context, data[len(UNREAD_MODE_PREFIX) :])
+        return
+    if data.startswith(THREAD_MODE_PREFIX):
+        await _set_thread_mode(update, context, data[len(THREAD_MODE_PREFIX) :])
         return
     if data.startswith(PR_SHOW_PREFIX):
         await _show_pull_request(update, context, data[len(PR_SHOW_PREFIX) :])
@@ -328,6 +344,7 @@ async def _show_pull_request(
     await query.answer("PR refreshed")
     await query.edit_message_text(
         build_agent_info_message(agent, pull_request),
+        parse_mode="HTML",
         reply_markup=render_pull_request_keyboard(
             agent_id=agent.id,
             pull_request=pull_request,
@@ -358,6 +375,7 @@ async def _mark_pull_request_ready(
     await query.answer("Marked ready for review")
     await query.edit_message_text(
         build_agent_info_message(agent, pull_request),
+        parse_mode="HTML",
         reply_markup=render_pull_request_keyboard(
             agent_id=agent.id,
             pull_request=pull_request,
@@ -393,4 +411,70 @@ async def _merge_pull_request(
         return
 
     await query.answer("Pull request merged")
-    await query.edit_message_text(build_agent_info_message(agent, pull_request))
+    await query.edit_message_text(
+        build_agent_info_message(agent, pull_request),
+        parse_mode="HTML",
+    )
+
+
+async def _set_unread_mode(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    raw_mode: str,
+) -> None:
+    query = update.callback_query
+    services = get_services(context)
+    try:
+        mode = UnselectedAgentUnreadMode(raw_mode)
+    except ValueError:
+        await query.answer("Invalid unread mode.", show_alert=True)
+        return
+
+    await services.create_agent_service.state_repo.set_unselected_agent_unread_mode(
+        services.settings.telegram_allowed_user_id,
+        mode,
+    )
+    await query.answer("Unread mode updated")
+    await query.edit_message_text(
+        _build_unread_command_text(
+            mode,
+            intro=(
+                "Unread handling for unselected agents is now set to "
+                f"{_describe_unread_mode(mode)}."
+            ),
+        ),
+        reply_markup=render_unread_mode_keyboard(mode),
+    )
+
+
+async def _set_thread_mode(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    raw_mode: str,
+) -> None:
+    query = update.callback_query
+    if raw_mode not in {"on", "off"}:
+        await query.answer("Invalid thread mode option.", show_alert=True)
+        return
+
+    text, enabled = await _set_thread_mode_enabled(update, context, raw_mode == "on")
+    answer = "Thread mode updated"
+    show_alert = False
+    if not text.startswith("Thread mode is"):
+        answer = text
+        show_alert = True
+
+    await query.answer(answer, show_alert=show_alert)
+    await query.edit_message_text(
+        _build_thread_mode_command_text(enabled, intro=text),
+        reply_markup=render_thread_mode_keyboard(enabled),
+    )
+
+
+def _describe_unread_mode(mode: UnselectedAgentUnreadMode) -> str:
+    descriptions = {
+        UnselectedAgentUnreadMode.FULL: "full text delivery",
+        UnselectedAgentUnreadMode.COUNT: "unread count notices",
+        UnselectedAgentUnreadMode.NONE: "no notifications",
+    }
+    return descriptions[mode]

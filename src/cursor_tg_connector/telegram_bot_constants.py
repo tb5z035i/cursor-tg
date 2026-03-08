@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 SWITCH_AGENT_PREFIX = "agent:switch:"
+UNREAD_MODE_PREFIX = "settings:unread:"
+THREAD_MODE_PREFIX = "settings:threadmode:"
 PR_SHOW_PREFIX = "pr:show:"
 PR_READY_PREFIX = "pr:ready:"
 PR_MERGE_PREFIX = "pr:merge:"

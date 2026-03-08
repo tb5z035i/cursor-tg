@@ -75,6 +75,22 @@ class AgentService:
         agent = await self.cursor_client.get_agent(agent_id)
         return agent.name or agent_id
 
+    async def get_recent_history(
+        self,
+        agent_id: str,
+        limit: int,
+    ) -> tuple[Agent, list[ConversationMessage], int]:
+        agent = await self.cursor_client.get_agent(agent_id)
+        conversation = await self.cursor_client.get_conversation(agent_id)
+        assistant_total = sum(
+            1 for message in conversation.messages if message.type == "assistant_message"
+        )
+        return agent, conversation.messages[-limit:], assistant_total
+
+    async def mark_history_delivered(self, agent_id: str, assistant_total: int) -> None:
+        await self.state_repo.set_delivery_cursor(agent_id, assistant_total)
+        await self.state_repo.clear_notice_state(agent_id)
+
     async def stop_active_agent(self, telegram_user_id: int) -> Agent | None:
         session = await self.state_repo.get_session(telegram_user_id)
         if not session.active_agent_id:

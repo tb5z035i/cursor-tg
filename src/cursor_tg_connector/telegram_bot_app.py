@@ -22,6 +22,7 @@ from cursor_tg_connector.telegram_bot_commands import (
     current_command,
     focus_command,
     help_command,
+    history_command,
     merge_command,
     new_agent_command,
     pr_command,
@@ -53,6 +54,7 @@ def build_application(services: AppServices) -> Application:
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("current", current_command))
+    application.add_handler(CommandHandler("history", history_command))
     application.add_handler(CommandHandler("agents", agents_command))
     application.add_handler(CommandHandler("focus", focus_command))
     application.add_handler(CommandHandler("configure_unread", configure_unread_command))

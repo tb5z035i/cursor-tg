@@ -14,31 +14,35 @@ Issues or suggestions? Reach me on Telegram at [@tb5z035i](https://t.me/tb5z035i
 
 <table>
   <tr>
-    <td width="25%" valign="top" align="center">
-      <img src="./resources/part1.gif" alt="Creating a Cursor Cloud agent from Telegram" />
+    <td width="50%" valign="top" align="center">
+      <img src="./resources/part1-lowres.gif" alt="Creating a Cursor Cloud agent from Telegram" />
     </td>
-    <td width="25%" valign="top" align="center">
-      <img src="./resources/part2.gif" alt="Viewing pull request status and merging from Telegram" />
-    </td>
-    <td width="25%" valign="top" align="center">
-      <img src="./resources/part3.gif" alt="Showing the active pull request diff in Telegram" />
-    </td>
-    <td width="25%" valign="top" align="center">
-      <img src="./resources/part4.gif" alt="Fetching and showing previous agent conversations in Telegram" />
+    <td width="50%" valign="top" align="center">
+      <img src="./resources/part2-lowres.gif" alt="Viewing pull request status and merging from Telegram" />
     </td>
   </tr>
   <tr>
     <td valign="top" align="center">
-      <p><strong>Part 1:</strong> Create a new Cursor Cloud agent from Telegram with the guided <code>/newagent</code> flow.</p>
+      <p>Create a new Cursor Cloud agent from Telegram with the guided <code>/newagent</code> flow.</p>
     </td>
     <td valign="top" align="center">
-      <p><strong>Part 2:</strong> View the active pull request, check its status, and merge it directly from Telegram.</p>
+      <p>View the active pull request, check its status, and merge it directly from Telegram.</p>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top" align="center">
+      <img src="./resources/part3-lowres.gif" alt="Showing the active pull request diff in Telegram" />
+    </td>
+    <td width="50%" valign="top" align="center">
+      <img src="./resources/part4-lowres.gif" alt="Fetching and showing previous agent conversations in Telegram" />
+    </td>
+  </tr>
+  <tr>
+    <td valign="top" align="center">
+      <p>Show the active PR diff directly in Telegram with <code>/diff</code>.</p>
     </td>
     <td valign="top" align="center">
-      <p><strong>Part 3:</strong> Show the active PR diff directly in Telegram with <code>/diff</code>.</p>
-    </td>
-    <td valign="top" align="center">
-      <p><strong>Part 4:</strong> Fetch and show previous agent conversations in Telegram with <code>/history</code>.</p>
+      <p>Fetch and show previous agent conversations in Telegram with <code>/history</code>.</p>
     </td>
   </tr>
 </table>

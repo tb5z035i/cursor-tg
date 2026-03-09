@@ -10,6 +10,7 @@ A single-process Python service that bridges a Telegram bot with the [Cursor Clo
 - [Q&A](#qa)
 - [Development](#development)
 - [Architecture](#architecture)
+- [License](#license)
 
 ## Setup Guide
 
@@ -302,3 +303,7 @@ Single async Python process. No external database servers. Key components:
 - **CreateAgentService** — multi-step wizard for creating new agents
 - **AgentService** — conversation snapshots, unread tracking via delivery cursors
 - **TelegramNotifier** — converts Markdown to Telegram HTML, sends with plain-text fallback
+
+## License
+
+This project is licensed under the MIT License. See [LICENSE](./LICENSE) for the full text.

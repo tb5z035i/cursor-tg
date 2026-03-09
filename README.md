@@ -8,6 +8,8 @@ directly from Telegram.
 Run Cursor Cloud workflows from chat, keep up with unread agent replies, and
 inspect or act on pull requests without leaving Telegram.
 
+Issues or suggestions? Reach me on Telegram at [@tb5z035i](https://t.me/tb5z035i). <!-- pragma: allowlist secret -->
+
 ## Demo walkthrough
 
 <table>
@@ -40,8 +42,6 @@ inspect or act on pull requests without leaving Telegram.
     </td>
   </tr>
 </table>
-
-Issues or suggestions? Reach me on Telegram at [@tb5z035i](https://t.me/tb5z035i). <!-- pragma: allowlist secret -->
 
 ## Key functionalities
 

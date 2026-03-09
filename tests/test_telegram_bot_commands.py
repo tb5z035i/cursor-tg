@@ -248,6 +248,12 @@ async def test_help_command_includes_project_github_url(settings, state_repo) ->
     )
 
     assert len(message.replies) == 1
+    text, kwargs = message.replies[0]
+    assert kwargs == {"parse_mode": "HTML"}
+    assert (
+        'Issues or suggestions: <a href="https://t.me/'
+        'tb5z035i">@tb5z035i</a>' in text  # pragma: allowlist secret
+    )
     assert "GitHub: https://github.com/tb5z035i/cursor-tg" in message.replies[0][0]
 
 
@@ -278,10 +284,14 @@ async def test_start_command_greets_and_auto_enables_thread_mode_when_supported(
     assert session.thread_mode_configured is False
     assert len(message.replies) == 1
     text, kwargs = message.replies[0]
-    assert kwargs == {}
+    assert kwargs == {"parse_mode": "HTML"}
     assert text.startswith("Hi! I'm your Cursor Telegram connector.")
     assert "thread mode was turned on automatically" in text
     assert "Use /agents in the root chat to create or open each agent thread." in text
+    assert (
+        'Issues or suggestions: <a href="https://t.me/'
+        'tb5z035i">@tb5z035i</a>' in text  # pragma: allowlist secret
+    )
 
 
 @pytest.mark.asyncio

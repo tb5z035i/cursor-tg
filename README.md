@@ -1,14 +1,42 @@
 # Cursor Cloud Telegram Connector
 
+A single-process Python service that bridges a Telegram bot with the
+[Cursor Cloud Agents API](https://cursor.com/docs/cloud-agent/api/overview),
+so you can create agents, receive their responses, and send follow-ups
+directly from Telegram.
+
+Run Cursor Cloud workflows from chat, keep up with unread agent replies, and
+inspect or act on pull requests without leaving Telegram.
+
+## Demo walkthrough
+
 <table>
   <tr>
-    <td width="58%" valign="top">
-      <p>A single-process Python service that bridges a Telegram bot with the <a href="https://cursor.com/docs/cloud-agent/api/overview">Cursor Cloud Agents API</a>, so you can create agents, receive their responses, and send follow-ups directly from Telegram.</p>
-      <p>Run Cursor Cloud workflows from chat, keep up with unread agent replies, and inspect or act on pull requests without leaving Telegram.</p>
+    <td width="25%" valign="top" align="center">
+      <img src="./resources/part1.gif" alt="Creating a Cursor Cloud agent from Telegram" />
     </td>
-    <td width="42%" valign="top">
-      <video src="./resources/demo.webm" controls muted playsinline></video>
-      <p><a href="./resources/demo.webm">Open demo video</a></p>
+    <td width="25%" valign="top" align="center">
+      <img src="./resources/part2.gif" alt="Viewing pull request status and merging from Telegram" />
+    </td>
+    <td width="25%" valign="top" align="center">
+      <img src="./resources/part3.gif" alt="Showing the active pull request diff in Telegram" />
+    </td>
+    <td width="25%" valign="top" align="center">
+      <img src="./resources/part4.gif" alt="Fetching and showing previous agent conversations in Telegram" />
+    </td>
+  </tr>
+  <tr>
+    <td valign="top" align="center">
+      <p><strong>Part 1:</strong> Create a new Cursor Cloud agent from Telegram with the guided <code>/newagent</code> flow.</p>
+    </td>
+    <td valign="top" align="center">
+      <p><strong>Part 2:</strong> View the active pull request, check its status, and merge it directly from Telegram.</p>
+    </td>
+    <td valign="top" align="center">
+      <p><strong>Part 3:</strong> Show the active PR diff directly in Telegram with <code>/diff</code>.</p>
+    </td>
+    <td valign="top" align="center">
+      <p><strong>Part 4:</strong> Fetch and show previous agent conversations in Telegram with <code>/history</code>.</p>
     </td>
   </tr>
 </table>
@@ -17,16 +45,17 @@ Issues or suggestions? Reach me on Telegram at [@tb5z035i](https://t.me/tb5z035i
 
 ## Key functionalities
 
-- Create and manage Cursor Cloud agents directly from Telegram.
-- Send follow-up messages to the active agent and receive replies in chat.
+- Create and manage Cursor Cloud agents **directly from Telegram**.
+- Send **follow-up** messages to the active agent and receive replies in chat.
 - Monitor unread updates from multiple agents with configurable notification behavior.
-- Inspect pull request status and diffs from Telegram.
-- Mark pull requests ready for review or merge them when a GitHub token is configured.
-- Route agent conversations into dedicated Telegram threads/topics when threaded mode is enabled.
-- Persist agent state, unread tracking, and wizard progress locally with SQLite.
+- Inspect **PR status and diffs** from Telegram.
+- Mark PR as ready for review or **merge PR** when a GitHub token is configured.
+- Route agent conversations into dedicated Telegram threads/topics when **threaded mode** is enabled (thread mode of telegram bot should be enabled).
+- Persisted agent state, unread tracking, and wizard progress.
 
 ## Table of Contents
 
+- [Demo walkthrough](#demo-walkthrough)
 - [Key functionalities](#key-functionalities)
 - [Setup Guide](#setup-guide)
 - [Bot commands](#bot-commands)

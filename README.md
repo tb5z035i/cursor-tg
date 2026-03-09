@@ -13,8 +13,19 @@
   </tr>
 </table>
 
+## Key functionalities
+
+- Create and manage Cursor Cloud agents directly from Telegram.
+- Send follow-up messages to the active agent and receive replies in chat.
+- Monitor unread updates from multiple agents with configurable notification behavior.
+- Inspect pull request status and diffs from Telegram.
+- Mark pull requests ready for review or merge them when a GitHub token is configured.
+- Route agent conversations into dedicated Telegram threads/topics when threaded mode is enabled.
+- Persist agent state, unread tracking, and wizard progress locally with SQLite.
+
 ## Table of Contents
 
+- [Key functionalities](#key-functionalities)
 - [Setup Guide](#setup-guide)
 - [Bot commands](#bot-commands)
 - [Configuration Reference](#configuration-reference)

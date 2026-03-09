@@ -1,6 +1,17 @@
 # Cursor Cloud Telegram Connector
 
-A single-process Python service that bridges a Telegram bot with the [Cursor Cloud Agents API](https://cursor.com/docs/cloud-agent/api/overview), so you can create agents, receive their responses, and send follow-ups directly from Telegram.
+<table>
+  <tr>
+    <td width="58%" valign="top">
+      <p>A single-process Python service that bridges a Telegram bot with the <a href="https://cursor.com/docs/cloud-agent/api/overview">Cursor Cloud Agents API</a>, so you can create agents, receive their responses, and send follow-ups directly from Telegram.</p>
+      <p>Run Cursor Cloud workflows from chat, keep up with unread agent replies, and inspect or act on pull requests without leaving Telegram.</p>
+    </td>
+    <td width="42%" valign="top">
+      <video src="./resources/demo.webm" controls muted playsinline></video>
+      <p><a href="./resources/demo.webm">Open demo video</a></p>
+    </td>
+  </tr>
+</table>
 
 ## Table of Contents
 

@@ -13,6 +13,8 @@
   </tr>
 </table>
 
+Issues or suggestions? Reach me on Telegram at [@tb5z035i](https://t.me/tb5z035i). <!-- pragma: allowlist secret -->
+
 ## Key functionalities
 
 - Create and manage Cursor Cloud agents directly from Telegram.

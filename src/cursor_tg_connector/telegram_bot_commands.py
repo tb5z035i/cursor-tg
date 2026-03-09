@@ -69,7 +69,9 @@ _HELP_TEXT = (
     "/configure_unread.\n"
     "• Use /resetdb if you want to wipe and reinitialize local bot state.\n"
     "\n"
-    f"GitHub: {_PROJECT_GITHUB_URL}"
+    f"GitHub: {_PROJECT_GITHUB_URL}\n"
+    'Issues or suggestions: <a href="https://t.me/'
+    'tb5z035i">@tb5z035i</a>'  # pragma: allowlist secret
 )
 
 _STOP_HELP_TEXT = (
@@ -108,7 +110,8 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             thread_mode_supported=supported,
             thread_mode_enabled=session.thread_mode_enabled,
             thread_mode_configured=getattr(session, "thread_mode_configured", False),
-        )
+        ),
+        parse_mode="HTML",
     )
 
 
@@ -116,7 +119,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     if not await _authorize_and_record_chat(update, context):
         return
 
-    await update.effective_message.reply_text(_HELP_TEXT)
+    await update.effective_message.reply_text(_HELP_TEXT, parse_mode="HTML")
 
 
 async def current_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
